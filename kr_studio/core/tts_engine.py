@@ -60,6 +60,24 @@ class TTSEngine:
         dur = self.speak(text)
         time.sleep(max(dur, 1.5))
 
+    def play_audio(self, path: str):
+        """Reproduce un archivo de audio previamente generado de forma síncrona."""
+        if not os.path.exists(path):
+            return
+        self.stop_current()
+        subprocess.run(['mpv', '--no-video', '--really-quiet', path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def play_audio_bg(self, path: str):
+        """Reproduce un archivo de audio previamente generado en background."""
+        if not os.path.exists(path):
+            return
+        self.stop_current()
+        self._current_proc = subprocess.Popen(
+            ['mpv', '--no-video', '--really-quiet', path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
     def stop_current(self):
         """Detiene el audio que se está reproduciendo."""
         if self._current_proc and self._current_proc.poll() is None:
