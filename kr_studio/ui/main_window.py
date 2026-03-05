@@ -22,10 +22,10 @@ from kr_studio.ui.floating_control import FloatingControl
 # COLORES DEL TEMA
 # ═══════════════════════════════════════════════
 COLORS = {
-    "bg_dark": "#08090a",
-    "bg_panel": "#0d0e10",
-    "bg_editor": "#0a0b0d",
-    "bg_chat": "#0a0b0d",
+    "bg_dark": "#000000",
+    "bg_panel": "#000000",
+    "bg_editor": "#000000",
+    "bg_chat": "#000000",
     "accent_cyan": "#00D9FF",
     "accent_green": "#00CA4E",
     "accent_magenta": "#FF2D78",
@@ -1072,9 +1072,12 @@ class MainWindow(ctk.CTkFrame):
         # ── Inyectar JSON si hay contenido válido en Editor B ──
         self._active_tab = "b"  # Forzar parseo de laTerminal B
         json_data = self._parse_editor_json()
-        if json_data:
-            self._active_director.json_data = json_data
-            self.append_chat("Sistema", f"📌 JSON inyectado: {len(json_data)} escenas")
+        if not json_data:
+            self.append_chat("Error", "❌ Debes generar un guion o pegar un JSON válido en Editor B primero.")
+            return
+
+        self._active_director.json_data = json_data
+        self.append_chat("Sistema", f"📌 JSON inyectado: {len(json_data)} escenas")
 
         self.btn_stop.configure(state="normal")
         self.btn_launch.configure(state="disabled")
