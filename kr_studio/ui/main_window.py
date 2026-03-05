@@ -1388,18 +1388,25 @@ class MainWindow(ctk.CTkFrame):
 
     def _process_chat(self, prompt: str):
         try:
-            # Resetear sesión para evitar contaminación de temas anteriores
-            if self.ai.model:
-                self.ai.chat_session = self.ai.model.start_chat(history=[])
-
             mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
+            target_editor = "Editor B" if mode == "SOLO TERM" else "Editor A"
+            self._active_tab = "b" if mode == "SOLO TERM" else "a"
+            
+            # Verificar si ya existe un JSON en el editor activo
+            existing_json = self._parse_editor_json()
+
+            # Si NO hay JSON, reseteamos la sesión para generar uno limpio
+            if not existing_json:
+                if self.ai.model:
+                    self.ai.chat_session = self.ai.model.start_chat(history=[])
+
             solo_instruction = ""
             if mode == "SOLO TERM":
                 solo_instruction = (
                     "\n\n[MODO SOLO TERM ACTIVADO]\n"
-                    "OBLIGATORIO: Estás generando un guion para MODO SOLO (SOLO TERMINAL DE COMANDOS).\n"
+                    "OBLIGATORIO: Estás generando/modificando un guion para MODO SOLO (SOLO TERMINAL DE COMANDOS).\n"
                     "REGLAS ESTRICTAS PARA MODO SOLO:\n"
-                    "1. IGNORA EL FLUJO DE 'MENU' (kr-clidn, dashboard, consola AI). NO uses el tipo de escena 'menu' ni 'leer'.\n"
+                    "1. IGNORA EL FLUJO DE 'MENU'. NO uses el tipo de escena 'menu' ni 'leer'.\n"
                     "2. Empieza directamente con una 'narracion' introduciendo el tema.\n"
                     "3. Usa escenas de 'ejecucion' para mostrar los comandos reales en la Terminal B.\n"
                     "4. Intercala 'narracion' explicando qué hace cada comando y qué resultados esperar.\n"
@@ -1410,33 +1417,48 @@ class MainWindow(ctk.CTkFrame):
 
             # Inyectar el target legal seleccionado
             target = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
-            enriched_prompt = (
-                f"TEMA SOLICITADO POR EL USUARIO: {prompt}\n\n"
-                f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
-                f"Genera un guion sobre EXACTAMENTE este tema: {prompt}\n"
-                f"NO generes sobre nmap ni otro tema diferente al solicitado."
-                f"{solo_instruction}"
-            )
+            
+            if existing_json:
+                # Si ya hay un JSON, instruimos a la IA a que lo modifique con la petición del usuario
+                enriched_prompt = (
+                    f"El usuario solicita la siguiente modificación al guion actual: {prompt}\n\n"
+                    f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
+                    f"AQUÍ ESTÁ EL GUION JSON ACTUAL:\n{json.dumps(existing_json, ensure_ascii=False)}\n\n"
+                    f"Modifica el JSON actual para cumplir con la petición del usuario, "
+                    f"manteniendo la estructura original.\n"
+                    f"Responde CIENTO POR CIENTO SOLO CON UN ARREGLO JSON VALIDO. Nada de texto extra."
+                    f"{solo_instruction}"
+                )
+            else:
+                # Generación desde cero
+                enriched_prompt = (
+                    f"TEMA SOLICITADO POR EL USUARIO: {prompt}\n\n"
+                    f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
+                    f"Genera un guion sobre EXACTAMENTE este tema: {prompt}\n"
+                    f"NO generes sobre nmap ni otro tema diferente al solicitado."
+                    f"{solo_instruction}"
+                )
+
             response = self.ai.chat(enriched_prompt)
             json_data = self.ai.extraer_json(response)
 
             if json_data:
                 self.after(0, self._stop_processing_animation)
-                mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
-                target_editor = "Editor B" if mode == "SOLO TERM" else "Editor A"
                 
-                self.after(0, self.append_chat, "DOMINION",
-                           f"✅ Guion ({mode}) generado — {len(json_data)} escenas. Revisa {target_editor} →")
+                if existing_json:
+                    msg_txt = f"✅ Guion ({mode}) modificado — {len(json_data)} escenas. Revisa revisa {target_editor} →"
+                else:
+                    msg_txt = f"✅ Guion ({mode}) generado — {len(json_data)} escenas. Revisa {target_editor} →"
+                    
+                self.after(0, self.append_chat, "DOMINION", msg_txt)
                 json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
 
                 def inject_json():
                     if mode == "SOLO TERM":
-                        # Solo mode → JSON va a editor B
                         self.editor_b.delete("1.0", "end")
                         self.editor_b.insert("end", json_str)
                         self._switch_editor_tab("b")
                     else:
-                        # Dual mode → JSON va a editor A
                         self.editor.delete("1.0", "end")
                         self.editor.insert("end", json_str)
                         self._switch_editor_tab("a")
