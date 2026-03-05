@@ -145,6 +145,30 @@ class SoloDirectorEngine:
             return f"kr-cli {cmd}"
         return cmd
 
+    def _speak(self, text: str) -> float:
+        """Genera TTS y reproduce audio. Retorna duración en segundos."""
+        if not text or not text.strip():
+            return 0.0
+        self._audio_counter = getattr(self, '_audio_counter', 0) + 1
+        audio_dir = os.path.join(self.workspace_dir, "audio_solo")
+        os.makedirs(audio_dir, exist_ok=True)
+        audio_path = os.path.join(audio_dir, f"solo_{self._audio_counter}.mp3")
+
+        try:
+            duracion = self.audio_engine.generar_audio(text, audio_path)
+            self._flog(f"  🔊 TTS: {duracion:.1f}s", "info")
+
+            # Reproducir audio en background
+            subprocess.Popen(
+                ['mpv', '--no-video', '--really-quiet', audio_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return duracion
+        except Exception as e:
+            self._flog(f"  ⚠ TTS error: {e}", "error")
+            return 2.0
+
     # ─── SECUENCIA PRINCIPAL ───
 
     def _run_solo_sequence(self):
@@ -184,6 +208,11 @@ class SoloDirectorEngine:
             time.sleep(1.0)
 
         self._wait_continue("Terminal lista")
+
+        # ── Narración introductoria ──
+        intro = f"Bienvenidos. Hoy vamos a explorar {self.topic} con demostraciones prácticas en vivo."
+        dur = self._speak(intro)
+        time.sleep(max(dur, 2.0))
 
         # ── CICLOS ──
         prev_output = ""
@@ -232,31 +261,46 @@ class SoloDirectorEngine:
             self._flog(f"  {len(commands_json)} acciones generadas ✅", "ok")
             self._show_json_b(commands_json)
 
-            # ── Ejecutar comandos ──
+            # ── Ejecutar comandos con TTS ──
             for ci, cmd in enumerate(commands_json):
                 if not self.is_running:
                     break
 
+                voz = cmd.get("voz", "")
+
                 if cmd.get("tipo") == "narracion":
-                    self._flog(f"  🎙 {cmd.get('voz', '')[:40]}", "info")
-                    time.sleep(2.0)
+                    # Generar y reproducir narración TTS
+                    self._flog(f"  🎙 {voz[:40]}", "info")
+                    dur = self._speak(voz)
+                    time.sleep(max(dur, 2.0))
 
                 elif cmd.get("tipo") == "ejecucion":
                     comando = cmd.get("comando_real", "")
                     if comando:
-                        # Aplicar wrapper si está habilitado
+                        # Narrar mientras se tipea
+                        if voz:
+                            dur = self._speak(voz)
+                        else:
+                            dur = 0.0
+
+                        # Aplicar wrapper y ejecutar
                         final_cmd = self._wrap_command(comando)
                         self._flog(f"  > {final_cmd[:45]}", "ok")
                         self._focus_window(self.wid_b)
                         self._type_text(self.wid_b, final_cmd)
                         time.sleep(0.5)
                         self._send_key(self.wid_b, "Return")
-                        time.sleep(3.0)
+                        # Esperar: al menos la duración del audio + 2s para output
+                        time.sleep(max(dur, 2.0) + 1.0)
                         all_commands.append(comando)
                         self._wait_continue(f"Cmd {ci+1} ejecutado")
 
                 elif cmd.get("tipo") == "pausa":
-                    time.sleep(cmd.get("espera", 3.0))
+                    if voz:
+                        dur = self._speak(voz)
+                        time.sleep(max(dur, cmd.get("espera", 3.0)))
+                    else:
+                        time.sleep(cmd.get("espera", 3.0))
 
             # ── Leer output de Terminal B ──
             self._flog("  📖 Leyendo Terminal B...", "info")
@@ -266,6 +310,11 @@ class SoloDirectorEngine:
 
             if cycle < self.total_cycles and self.is_running:
                 self._wait_continue(f"Listo para ciclo {cycle+1}")
+
+        # ── Narración de cierre ──
+        outro = f"Esto ha sido una demostración práctica de {self.topic}. Síguenos para más contenido de ciberseguridad."
+        dur = self._speak(outro)
+        time.sleep(max(dur, 3.0))
 
         # ── FIN ──
         if obs_ok:
