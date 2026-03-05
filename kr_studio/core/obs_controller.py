@@ -111,3 +111,76 @@ class OBSController:
         except Exception as e:
             logger.warning(f"Error al detener grabación: {e}")
             return False
+
+    def get_current_scene(self) -> str:
+        """Obtiene el nombre de la escena activa."""
+        if not self.connected:
+            return ""
+        try:
+            response = self.ws.call(self._obs_requests.GetCurrentProgramScene())
+            return response.datain.get("currentProgramSceneName", "")
+        except Exception:
+            return ""
+
+    def setup_dual_scenes(self, wid_a: str, wid_b: str) -> dict:
+        """
+        Configura OBS con 2 escenas para captura de terminales.
+        Crea las escenas si no existen y añade window capture sources.
+        Retorna un dict con el resultado.
+        """
+        result = {"ok": False, "scenes": [], "errors": []}
+
+        if not self.connected:
+            result["errors"].append("No conectado a OBS")
+            return result
+
+        existing = self._get_scene_names()
+        result["scenes"] = existing
+
+        # Crear escenas si no existen
+        for scene_name in ["Terminal-A", "Terminal-B"]:
+            if scene_name not in existing:
+                try:
+                    self.ws.call(self._obs_requests.CreateScene(
+                        sceneName=scene_name
+                    ))
+                    logger.info(f"✅ Escena '{scene_name}' creada")
+                    result["scenes"].append(scene_name)
+                except Exception as e:
+                    result["errors"].append(f"Error creando '{scene_name}': {e}")
+
+        # Intentar agregar Window Capture a cada escena
+        captures = [
+            ("Terminal-A", "Captura-TermA", wid_a),
+            ("Terminal-B", "Captura-TermB", wid_b),
+        ]
+
+        for scene_name, source_name, wid in captures:
+            try:
+                # Verificar si ya tiene fuentes
+                resp = self.ws.call(self._obs_requests.GetSceneItemList(
+                    sceneName=scene_name
+                ))
+                items = resp.datain.get("sceneItems", [])
+                if len(items) > 0:
+                    logger.info(f"  '{scene_name}' ya tiene {len(items)} fuentes")
+                    continue
+
+                # Crear fuente de captura de ventana
+                self.ws.call(self._obs_requests.CreateInput(
+                    sceneName=scene_name,
+                    inputName=source_name,
+                    inputKind="xcomposite_input",
+                    inputSettings={
+                        "capture_window": "",
+                        "capture_window_use_regex": False
+                    }
+                ))
+                logger.info(f"✅ Fuente '{source_name}' agregada a '{scene_name}'")
+            except Exception as e:
+                msg = f"Fuente en '{scene_name}': {e}"
+                logger.warning(msg)
+                result["errors"].append(msg)
+
+        result["ok"] = "Terminal-A" in result["scenes"] and "Terminal-B" in result["scenes"]
+        return result

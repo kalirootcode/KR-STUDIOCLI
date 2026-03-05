@@ -125,7 +125,16 @@ class MainWindow(ctk.CTkFrame):
                                       fg_color=COLORS["accent_cyan"],
                                       text_color="#000000",
                                       hover_color="#00b8d4")
-        self.api_btn.pack(side="left", padx=(5, 15))
+        self.api_btn.pack(side="left", padx=(5, 4))
+
+        # Botón OBS
+        self.obs_btn = ctk.CTkButton(bar, text="📺 OBS", width=70,
+                                      command=self._connect_obs,
+                                      font=("JetBrains Mono", 11, "bold"),
+                                      fg_color="#6c3483",
+                                      text_color="#ffffff",
+                                      hover_color="#8e44ad")
+        self.obs_btn.pack(side="left", padx=(0, 15))
 
     def _build_chat_panel(self):
         """Panel izquierdo — Chat AI DOMINION."""
@@ -461,18 +470,43 @@ class MainWindow(ctk.CTkFrame):
                                        state="disabled")
         self.btn_stop.pack(side="right", expand=True, padx=(3, 0), fill="x")
 
-        # Fila 2: Botón Dinámico
+        # Fila 2: Modos de video + Wrapper toggle
         btn_row2 = ctk.CTkFrame(controls, fg_color="transparent")
-        btn_row2.pack(fill="x", padx=8, pady=(0, 6))
+        btn_row2.pack(fill="x", padx=8, pady=(0, 2))
 
-        self.btn_dynamic = ctk.CTkButton(btn_row2, text="🚀 DINÁMICO",
+        self.btn_dynamic = ctk.CTkButton(btn_row2, text="🚀 DUAL AI",
                                           command=self.launch_dynamic,
                                           fg_color="#7B1FA2",
                                           hover_color="#6A1B9A",
                                           text_color="#ffffff",
-                                          font=("JetBrains Mono", 12, "bold"),
-                                          height=34)
-        self.btn_dynamic.pack(fill="x")
+                                          font=("JetBrains Mono", 11, "bold"),
+                                          height=30)
+        self.btn_dynamic.pack(side="left", expand=True, padx=(0, 2), fill="x")
+
+        self.btn_solo = ctk.CTkButton(btn_row2, text="⚡ SOLO TERM",
+                                       command=self.launch_solo,
+                                       fg_color="#E65100",
+                                       hover_color="#BF360C",
+                                       text_color="#ffffff",
+                                       font=("JetBrains Mono", 11, "bold"),
+                                       height=30)
+        self.btn_solo.pack(side="left", expand=True, padx=(2, 0), fill="x")
+
+        # Fila 3: Wrapper toggle
+        wrapper_row = ctk.CTkFrame(controls, fg_color="transparent")
+        wrapper_row.pack(fill="x", padx=8, pady=(0, 6))
+
+        self.use_wrapper_var = ctk.BooleanVar(value=False)
+        self.wrapper_check = ctk.CTkCheckBox(
+            wrapper_row, text="🔲 KR-CLI Wrapper (Terminal B)",
+            variable=self.use_wrapper_var,
+            font=("JetBrains Mono", 10),
+            text_color=COLORS["text_dim"],
+            fg_color=COLORS["accent_magenta"],
+            hover_color="#9c27b0",
+            checkbox_width=18, checkbox_height=18
+        )
+        self.wrapper_check.pack(side="left")
 
     # ═══════════════════════════════════════════════
     # SPEED SLIDER
@@ -596,10 +630,64 @@ class MainWindow(ctk.CTkFrame):
         self.btn_launch.configure(state="disabled")
         self.btn_record.configure(state="disabled")
         self.btn_dynamic.configure(state="disabled")
+        self.btn_solo.configure(state="disabled")
 
         self._active_director.start()
 
         # Re-habilitar después de un timeout largo
+        self.after(duration * 60 * 1000 + 30000, lambda: self.btn_dynamic.configure(state="normal"))
+        self.after(duration * 60 * 1000 + 30000, lambda: self.btn_solo.configure(state="normal"))
+
+    def launch_solo(self):
+        """Lanza el Director Solo — solo Terminal B para testeo de herramientas."""
+        from kr_studio.core.solo_director import SoloDirectorEngine
+
+        if not self.wid_b:
+            self.append_chat("Error", "❌ No hay Terminal B. Espera a que abra.")
+            return
+
+        if not self.ai or not self.ai.chat_session:
+            self.append_chat("Error", "❌ Conecta la API Key primero.")
+            return
+
+        topic = self._get_last_user_topic()
+        if not topic:
+            self.append_chat("Error", "❌ Escribe un tema en el chat primero.")
+            return
+
+        duration = self.video_duration_min
+        wrapper = self.use_wrapper_var.get()
+        mode = "KR-CLI Wrapper" if wrapper else "Comandos Limpios"
+        target = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
+
+        self.append_chat("Sistema",
+                         f"⚡ MODO SOLO TERMINAL\n"
+                         f"  Tema: {topic}\n"
+                         f"  Target: {target}\n"
+                         f"  Duración: {duration} min\n"
+                         f"  Modo: {mode}\n"
+                         f"  Solo Terminal B — sin kr-clidn")
+
+        self._active_director = SoloDirectorEngine(
+            self, topic, duration, self.workspace_dir
+        )
+        self._active_director.wid_b = self.wid_b
+        self._active_director.typing_delay = self.typing_speed_ms
+        self._active_director.obs.password = self._load_env_value("OBS_PASSWORD", "")
+        self._active_director.ai_engine = self.ai
+        self._active_director.floating_ctrl = self._floating_ctrl
+        self._active_director.use_wrapper = wrapper
+        self._active_director.on_json_terminal_b = self._inject_json_editor_b
+
+        self.btn_stop.configure(state="normal")
+        self.btn_launch.configure(state="disabled")
+        self.btn_record.configure(state="disabled")
+        self.btn_dynamic.configure(state="disabled")
+        self.btn_solo.configure(state="disabled")
+
+        self._active_director.start()
+
+        self.after(duration * 60 * 1000 + 30000, lambda: self.btn_solo.configure(state="normal"))
         self.after(duration * 60 * 1000 + 30000, lambda: self.btn_dynamic.configure(state="normal"))
 
     def _get_last_user_topic(self) -> str:
@@ -744,6 +832,52 @@ class MainWindow(ctk.CTkFrame):
     # ═══════════════════════════════════════════════
     # CHAT AI — MENSAJES ELEGANTES
     # ═══════════════════════════════════════════════
+
+    def _connect_obs(self):
+        """Conecta a OBS, crea escenas Terminal-A y Terminal-B si no existen."""
+        from kr_studio.core.obs_controller import OBSController
+
+        self.append_chat("Sistema", "📺 Conectando a OBS Studio...")
+        self._obs = OBSController()
+        self._obs.password = self._load_env_value("OBS_PASSWORD", "")
+
+        if not self._obs.connect():
+            self.append_chat("Error",
+                "❌ No se pudo conectar a OBS.\n"
+                "Verifica:\n"
+                "  1. OBS está abierto\n"
+                "  2. Tools → WebSocket Server Settings → Enable\n"
+                "  3. Puerto: 4455\n"
+                f"  4. Password: {self._obs.password or '(sin password)'}")
+            self.obs_btn.configure(fg_color="#e74c3c")
+            return
+
+        # Auto-setup de escenas
+        scenes = self._obs._get_scene_names()
+        result = self._obs.setup_dual_scenes(
+            self.wid_a or "0", self.wid_b or "0"
+        )
+
+        self.obs_btn.configure(fg_color="#27ae60", text="📺 ✅")
+        scenes_final = self._obs._get_scene_names()
+        current = self._obs.get_current_scene()
+
+        msg = (
+            f"✅ OBS Conectado\n"
+            f"  Escenas: {', '.join(scenes_final)}\n"
+            f"  Escena activa: {current}\n"
+        )
+
+        if "Terminal-A" in scenes_final and "Terminal-B" in scenes_final:
+            msg += "  ✅ Terminal-A y Terminal-B listas\n"
+            msg += "\n⚠ IMPORTANTE: En cada escena, agrega manualmente:\n"
+            msg += "  Terminal-A → Source → Window Capture → Konsole (Terminal A)\n"
+            msg += "  Terminal-B → Source → Window Capture → Konsole (Terminal B)\n"
+            msg += "  Ajusta el tamaño a 450×800 (9:16) en cada fuente"
+        else:
+            msg += f"  ⚠ Errores: {result.get('errors', [])}"
+
+        self.append_chat("Sistema", msg)
 
     def save_api_key(self):
         key = self.api_entry.get().strip()
