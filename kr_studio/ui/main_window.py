@@ -1387,8 +1387,15 @@ class MainWindow(ctk.CTkFrame):
             if mode == "SOLO TERM":
                 solo_instruction = (
                     "\n\n[MODO SOLO TERM ACTIVADO]\n"
-                    "OBLIGATORIO: Devuelve SOLO comandos de tipo 'ejecucion' para probar herramientas.\n"
-                    "NO incluyas 'menu' ni 'narracion' extensa. Los comandos irán directo a la Terminal B."
+                    "OBLIGATORIO: Estás generando un guion para MODO SOLO (SOLO TERMINAL DE COMANDOS).\n"
+                    "REGLAS ESTRICTAS PARA MODO SOLO:\n"
+                    "1. IGNORA EL FLUJO DE 'MENU' (kr-clidn, dashboard, consola AI). NO uses el tipo de escena 'menu' ni 'leer'.\n"
+                    "2. Empieza directamente con una 'narracion' introduciendo el tema.\n"
+                    "3. Usa escenas de 'ejecucion' para mostrar los comandos reales en la Terminal B.\n"
+                    "4. Intercala 'narracion' explicando qué hace cada comando y qué resultados esperar.\n"
+                    "5. Puedes usar 'pausa' de 2 a 3 segundos si es necesario.\n"
+                    "6. Cierra con una 'narracion' de despedida.\n"
+                    "El JSON debe contener toda la interacción técnica directa con la terminal."
                 )
 
             # Inyectar el target legal seleccionado
