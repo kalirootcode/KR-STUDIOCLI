@@ -1495,23 +1495,78 @@ class MainWindow(ctk.CTkFrame):
         if json_data is None:
             return
 
+        is_solo = getattr(self, "_active_tab", "a") == "b"
+        mode_name = "SOLO" if is_solo else "DUAL"
         mode_txt = "+ OBS GRABANDO" if auto_record else "sin grabación"
-        self.append_chat("Sistema", f"🎬 Lanzando secuencia DUAL ({mode_txt}, tipeo: {self.typing_speed_ms}ms)...")
+        
+        self.append_chat("Sistema", f"🎬 Lanzando secuencia {mode_name} ({mode_txt}, tipeo: {self.typing_speed_ms}ms)...")
         self.btn_launch.configure(state="disabled")
         self.btn_record.configure(state="disabled")
 
-        self._active_director = DirectorEngine(self, json_data, self.workspace_dir)
-        self._active_director.wid_a = self.wid_a
-        self._active_director.wid_b = self.wid_b
-        self._active_director.typing_delay = self.typing_speed_ms
-        self._active_director.obs.password = self._load_env_value("OBS_PASSWORD", "")
+        if is_solo:
+            from kr_studio.core.solo_director import SoloDirectorEngine
+            topic = self._get_last_user_topic() or "Modo Solo"
+            self._active_director = SoloDirectorEngine(self.master_app, topic, self.video_duration_min, self.workspace_dir)
+            
+            # Replicar datos del JSON ya que SoloDirectorEngine espera generar en vivo o ejecutar JSON
+            # Inyectamos el JSON como si lo hubiera generado la IA
+            self._active_director.wid_b = self.wid_b
+            self._active_director.typing_delay = self.typing_speed_ms
+            self._active_director.obs.password = self._load_env_value("OBS_PASSWORD", "")
+            if not auto_record:
+                self._active_director.obs = type('MockOBS', (), {'connect': lambda s: False, 'connected': False})()
+            self._active_director.floating_ctrl = self._floating_ctrl
+            
+            # Override custom run to use the current JSON
+            orig_run = self._active_director._run_solo_sequence
+            def custom_run_with_json():
+                self._active_director.json_data = json_data
+                # Procesar audios primero
+                self.append_chat("Sistema", "Generando audios TTS para MODO SOLO...")
+                audio_engine = AudioEngine()
+                for idx, escena in enumerate(self._active_director.json_data):
+                    if "voz" in escena:
+                        path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{idx}.mp3")
+                        audio_engine.generar_audio(escena["voz"], path)
+                
+                # Ejecutar secuencia
+                self._active_director._start_wall = time.monotonic()
+                if self._active_director.obs.connect():
+                    self._active_director.obs.switch_scene("Terminal-B")
+                    if auto_record:
+                        self._active_director.obs.start_recording()
+                        time.sleep(1)
 
-        if not auto_record:
-            # Desactivar OBS para modo sin grabación
-            self._active_director.obs = type('MockOBS', (), {'connect': lambda s: False, 'connected': False})()
+                try:
+                    for i, escena in enumerate(self._active_director.json_data):
+                        if not self._active_director.is_running: break
+                        self._active_director._ejecutar_escena(escena, i)
+                except Exception as e:
+                    self.append_chat("Error", f"❌ Secuencia abortada: {e}")
+                
+                if auto_record and self._active_director.obs.connected:
+                    time.sleep(2)
+                    self._active_director.obs.stop_recording()
+                
+                self.append_chat("Sistema", "✅ Secuencia SOLO completada.")
+                self.timestamps = self._active_director.timestamps
+                self._active_director.is_running = False
 
-        # Pasar referencia del widget flotante ANTES de iniciar
-        self._active_director.floating_ctrl = self._floating_ctrl
+            self._active_director.start = lambda: threading.Thread(target=custom_run_with_json, daemon=True).start()
+            
+        else:
+            self._active_director = DirectorEngine(self, json_data, self.workspace_dir)
+            self._active_director.wid_a = self.wid_a
+            self._active_director.wid_b = self.wid_b
+            self._active_director.typing_delay = self.typing_speed_ms
+            self._active_director.obs.password = self._load_env_value("OBS_PASSWORD", "")
+
+            if not auto_record:
+                # Desactivar OBS para modo sin grabación
+                self._active_director.obs = type('MockOBS', (), {'connect': lambda s: False, 'connected': False})()
+
+            # Pasar referencia del widget flotante ANTES de iniciar
+            self._active_director.floating_ctrl = self._floating_ctrl
 
         self._active_director.start()
 
