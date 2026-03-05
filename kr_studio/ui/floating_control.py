@@ -205,6 +205,7 @@ class FloatingControl(ctk.CTkToplevel):
         self.add_log("Secuencia iniciada", "ok")
 
     def _set_idle(self):
+        self._animating = False
         self.btn_stop.configure(state="disabled")
         self.btn_launch.configure(state="normal")
         self.btn_record.configure(state="normal")
@@ -245,5 +246,32 @@ class FloatingControl(ctk.CTkToplevel):
         """Llamado cuando el Director termina."""
         with self._lock:
             self._continue_clicked = True  # Desbloquear si está esperando
+            self._animating = False
         self.add_log("✅ Secuencia finalizada", "ok")
         self._app_root.after(0, self._set_idle)
+
+    def start_processing_animation(self, msg="INICIALIZANDO"):
+        """Inicia una animación de puntos suspensivos en el label de estado."""
+        self._animating = True
+        self._anim_dots = 0
+        self._anim_msg = msg
+        self._animate()
+
+    def _animate(self):
+        if not getattr(self, "_animating", False):
+            return
+        dots = "." * (self._anim_dots % 4)
+        try:
+            self.status_lbl.configure(text=f"⚙ {self._anim_msg}{dots}", text_color="#00D9FF")
+        except Exception:
+            pass
+        self._anim_dots += 1
+        self._app_root.after(500, self._animate)
+
+    def stop_processing_animation(self):
+        """Detiene la animación y restaura el estado."""
+        self._animating = False
+        try:
+            self.status_lbl.configure(text="▶ CORRIENDO", text_color="#00CA4E")
+        except Exception:
+            pass

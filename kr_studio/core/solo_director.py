@@ -338,6 +338,11 @@ class SoloDirectorEngine:
 
         if tipo == "narracion":
             if voz:
+                # --- NUEVO: Esperar confirmación antes de hablar ---
+                self._wait_continue("🔊 Reproducir narración...")
+                if self.floating_ctrl:
+                    self.floating_ctrl.start_processing_animation("HABLANDO")
+
                 # Generar un hash único basado en el texto para evitar que se reproduzcan audios viejos
                 import hashlib
                 text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
@@ -348,6 +353,9 @@ class SoloDirectorEngine:
                     from kr_studio.core.audio_engine import AudioEngine
                     AudioEngine().generar_audio(voz, path)
                 self.tts.play_audio(path)
+                
+                if self.floating_ctrl:
+                    self.floating_ctrl.stop_processing_animation()
 
         elif tipo == "ejecucion":
             cmd = escena.get("comando_visual", "")
@@ -364,6 +372,12 @@ class SoloDirectorEngine:
             self.timestamps["ejecucion"].append(round(rel_time, 2))
 
             cmd_final = self._wrap_command(cmd)
+
+            # --- NUEVO: Esperar confirmación del usuario antes de lanzar comando ---
+            self._wait_continue(f"⚡ Ejecutar: {cmd[:25]}...")
+            if self.floating_ctrl:
+                self.floating_ctrl.start_processing_animation("PROCESANDO")
+
             self._type_text(self.wid_b, cmd_final)
             time.sleep(1.0)
             self._send_key(self.wid_b, "Return")
@@ -420,6 +434,9 @@ class SoloDirectorEngine:
                 if fix_resumen:
                     self._log("AI Analysis", f"🛠 Fix: {fix_resumen}")
                     self.tts.speak_and_wait(fix_resumen)
+
+            if self.floating_ctrl:
+                self.floating_ctrl.stop_processing_animation()
 
         elif tipo == "pausa":
             delay = float(escena.get("espera", 3.0))
