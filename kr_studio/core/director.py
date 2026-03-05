@@ -34,6 +34,11 @@ class DirectorEngine:
         # Almacén de respuestas leídas del terminal
         self.last_terminal_read = ""
 
+        # Timestamps para sincronización con video_engine
+        self.timestamps = {}
+        self._start_wall = 0.0
+        self.on_timestamps_ready = None  # callback(timestamps_dict)
+
     def start(self):
         self.is_running = True
         threading.Thread(target=self._run_sequence, daemon=True).start()
@@ -182,6 +187,7 @@ class DirectorEngine:
     def _run_sequence(self):
         self._log("Director", "🎬 Iniciando secuencia DUAL TERMINAL...")
         self._flog("Iniciando secuencia...", "ok")
+        self._start_wall = time.monotonic()
 
         # ── PASO 1: Detectar o lanzar 2 Konsoles ──
         if self.wid_a and self.wid_b:
@@ -256,11 +262,15 @@ class DirectorEngine:
                 self.floating_ctrl.set_progress(step_num, total)
                 self.floating_ctrl.add_log(f"Escena {step_num}/{total}: {tipo.upper()}", "step")
 
+            # Timestamp tracking
+            elapsed = time.monotonic() - self._start_wall
+
             # Duración del audio
             audio_path = os.path.join(self.workspace_dir, f"audio_{idx}.mp3")
             duracion = self.audio_engine.obtener_duracion(audio_path) if os.path.exists(audio_path) else 3.0
 
             if tipo == "narracion":
+                self.timestamps[f"scene_{idx}_audio"] = elapsed
                 # Solo espera la duración del audio (kr-clidn activo en Terminal A)
                 if obs_ok:
                     self.obs.switch_scene("Terminal-A")
@@ -268,6 +278,7 @@ class DirectorEngine:
                 self._flog(f"  Voz: {escena.get('voz', '')[:40]}", "info")
 
             elif tipo == "ejecucion":
+                self.timestamps[f"scene_{idx}_command"] = elapsed
                 if obs_ok:
                     self.obs.switch_scene("Terminal-B")
                 comando_real = escena.get("comando_real", "")
@@ -279,6 +290,7 @@ class DirectorEngine:
                 self._flog(f"  Ejecutado: {comando_real[:40]}", "ok")
 
             elif tipo == "menu":
+                self.timestamps[f"scene_{idx}_menu"] = elapsed
                 if obs_ok:
                     self.obs.switch_scene("Terminal-A")
                 tecla = escena.get("tecla", "")
@@ -309,6 +321,7 @@ class DirectorEngine:
                 self._flog(f"  Enter Terminal {terminal}", "info")
 
             elif tipo == "pausa":
+                self.timestamps[f"scene_{idx}_pause"] = elapsed
                 espera = escena.get("espera", 3.0)
                 time.sleep(espera)
                 self._flog(f"  Pausa {espera}s", "info")

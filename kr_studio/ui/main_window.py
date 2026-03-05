@@ -53,20 +53,50 @@ class MainWindow(ctk.CTkFrame):
         os.makedirs(self.projects_dir, exist_ok=True)
 
         self._active_director = None
-        self.typing_speed_ms = 120  # Default
-        self.wid_a = None  # Terminal A (kr-cli)
-        self.wid_b = None  # Terminal B (ejecución)
-        self._anim_id = None  # Para la animación de "procesando"
-        self._floating_ctrl = None  # Widget flotante
+        self.typing_speed_ms = 120
+        self.wid_a = None
+        self.wid_b = None
+        self._anim_id = None
+        self._floating_ctrl = None
 
-        # ─── LAYOUT ───
+        self.video_duration_min = 5
+        self.use_wrapper_var = None  # Se crea en _build_editor_panel
+        self.timestamps = {}
+        self._raw_video_path = None
+
+        # ─── LAYOUT: API Bar + Tabview ───
         self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
         self._build_api_bar()
+
+        # ── CTkTabview ──
+        self.tabview = ctk.CTkTabview(
+            self,
+            fg_color=COLORS["bg_dark"],
+            segmented_button_fg_color=COLORS["bg_panel"],
+            segmented_button_selected_color=COLORS["accent_cyan"],
+            segmented_button_selected_hover_color="#00b8d4",
+            segmented_button_unselected_color=COLORS["bg_dark"],
+            segmented_button_unselected_hover_color="#2a2b3e",
+            text_color="#000000",
+            corner_radius=8
+        )
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+
+        self.tab1 = self.tabview.add("🎬 Guion y Director")
+        self.tab2 = self.tabview.add("🎞️ Post-Producción")
+
+        # Tab 1 layout
+        self.tab1.grid_columnconfigure(0, weight=1)
+        self.tab1.grid_columnconfigure(1, weight=1)
+        self.tab1.grid_rowconfigure(0, weight=1)
+
         self._build_chat_panel()
         self._build_editor_panel()
+
+        # Tab 2 layout
+        self._build_postprod_tab()
 
         # ─── POSICIONAR VENTANA ───
         self.master_app.update_idletasks()
@@ -138,9 +168,9 @@ class MainWindow(ctk.CTkFrame):
 
     def _build_chat_panel(self):
         """Panel izquierdo — Chat AI DOMINION."""
-        panel = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=12,
+        panel = ctk.CTkFrame(self.tab1, fg_color=COLORS["bg_panel"], corner_radius=12,
                               border_width=1, border_color=COLORS["border"])
-        panel.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=8)
+        panel.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
 
         # Header estilizado
         header = ctk.CTkFrame(panel, fg_color=COLORS["header_bg"], height=48, corner_radius=0)
@@ -207,9 +237,9 @@ class MainWindow(ctk.CTkFrame):
 
     def _build_editor_panel(self):
         """Panel derecho — Editor JSON Profesional + controles."""
-        panel = ctk.CTkFrame(self, fg_color=COLORS["bg_panel"], corner_radius=12,
+        panel = ctk.CTkFrame(self.tab1, fg_color=COLORS["bg_panel"], corner_radius=12,
                               border_width=1, border_color=COLORS["border"])
-        panel.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=8)
+        panel.grid(row=0, column=1, sticky="nsew", padx=(4, 8), pady=8)
 
         # Usar grid para que el editor se expanda y los controles queden fijos abajo
         panel.grid_rowconfigure(2, weight=1)  # Editor row se expande
@@ -538,6 +568,326 @@ class MainWindow(ctk.CTkFrame):
         self.editor_b.delete("1.0", "end")
         self.editor_b.insert("end", json_text)
         self._switch_editor_tab("b")
+
+    # ═══════════════════════════════════════════════
+    # TAB 2: POST-PRODUCCIÓN
+    # ═══════════════════════════════════════════════
+
+    def _build_postprod_tab(self):
+        """Pestaña 2: Timeline visual + controles de renderizado."""
+        self.tab2.grid_rowconfigure(0, weight=3)
+        self.tab2.grid_rowconfigure(1, weight=1)
+        self.tab2.grid_columnconfigure(0, weight=1)
+
+        # ── Timeline Visual ──
+        timeline_frame = ctk.CTkFrame(self.tab2, fg_color=COLORS["bg_panel"],
+                                       corner_radius=12, border_width=1,
+                                       border_color=COLORS["border"])
+        timeline_frame.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
+
+        tl_header = ctk.CTkFrame(timeline_frame, fg_color=COLORS["header_bg"], height=40,
+                                  corner_radius=0)
+        tl_header.pack(fill="x")
+        tl_header.pack_propagate(False)
+        ctk.CTkLabel(tl_header, text="📊 TIMELINE", font=("JetBrains Mono", 14, "bold"),
+                     text_color=COLORS["accent_cyan"]).pack(side="left", padx=12)
+
+        self.timeline_duration_lbl = ctk.CTkLabel(
+            tl_header, text="⏱ 0.0s", font=("JetBrains Mono", 11),
+            text_color=COLORS["text_dim"])
+        self.timeline_duration_lbl.pack(side="right", padx=12)
+
+        # Canvas para dibujar timeline
+        import tkinter as tk
+        self.timeline_canvas = tk.Canvas(
+            timeline_frame, bg="#0d0e18", highlightthickness=0, height=200)
+        self.timeline_canvas.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Leyenda
+        legend = ctk.CTkFrame(timeline_frame, fg_color="transparent", height=25)
+        legend.pack(fill="x", padx=8, pady=(0, 4))
+        ctk.CTkLabel(legend, text="🔵 Audio/Narración",
+                     font=("JetBrains Mono", 9), text_color="#3498db").pack(side="left", padx=8)
+        ctk.CTkLabel(legend, text="🔴 Comando/Ejecución",
+                     font=("JetBrains Mono", 9), text_color="#e74c3c").pack(side="left", padx=8)
+        ctk.CTkLabel(legend, text="🟡 Pausa",
+                     font=("JetBrains Mono", 9), text_color="#f1c40f").pack(side="left", padx=8)
+        ctk.CTkLabel(legend, text="🟢 Menú",
+                     font=("JetBrains Mono", 9), text_color="#27ae60").pack(side="left", padx=8)
+
+        # ── Controles de Renderizado ──
+        controls_frame = ctk.CTkFrame(self.tab2, fg_color=COLORS["bg_panel"],
+                                       corner_radius=12, border_width=1,
+                                       border_color=COLORS["border"])
+        controls_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 8))
+
+        ctrl_header = ctk.CTkFrame(controls_frame, fg_color=COLORS["header_bg"], height=40,
+                                    corner_radius=0)
+        ctrl_header.pack(fill="x")
+        ctrl_header.pack_propagate(False)
+        ctk.CTkLabel(ctrl_header, text="🎬 RENDERIZADO", font=("JetBrains Mono", 14, "bold"),
+                     text_color=COLORS["accent_green"]).pack(side="left", padx=12)
+
+        # ── Modo Manual ──
+        manual_row = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        manual_row.pack(fill="x", padx=12, pady=(12, 4))
+
+        ctk.CTkLabel(manual_row, text="MODO MANUAL",
+                     font=("JetBrains Mono", 11, "bold"),
+                     text_color=COLORS["text_dim"]).pack(side="left")
+
+        self.btn_select_video = ctk.CTkButton(
+            manual_row, text="📂 Seleccionar Video (OBS)", width=200,
+            command=self._select_raw_video,
+            fg_color="#2c3e50", hover_color="#34495e",
+            text_color="#ecf0f1", font=("JetBrains Mono", 11, "bold"),
+            height=32)
+        self.btn_select_video.pack(side="left", padx=(12, 4))
+
+        self.video_path_lbl = ctk.CTkLabel(
+            manual_row, text="Sin video seleccionado",
+            font=("JetBrains Mono", 10), text_color=COLORS["text_dim"])
+        self.video_path_lbl.pack(side="left", padx=8)
+
+        self.btn_manual_render = ctk.CTkButton(
+            manual_row, text="🎞️ Sincronizar y Exportar MP4", width=220,
+            command=self._manual_render,
+            fg_color="#1565c0", hover_color="#0d47a1",
+            text_color="#ffffff", font=("JetBrains Mono", 11, "bold"),
+            height=32)
+        self.btn_manual_render.pack(side="right", padx=4)
+
+        # ── Modo Automático ──
+        auto_row = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        auto_row.pack(fill="x", padx=12, pady=(8, 4))
+
+        ctk.CTkLabel(auto_row, text="MODO AUTOMÁTICO",
+                     font=("JetBrains Mono", 11, "bold"),
+                     text_color=COLORS["text_dim"]).pack(side="left")
+
+        self.btn_auto_render = ctk.CTkButton(
+            auto_row, text="🤖 Auto-Grabar y Renderizar", width=250,
+            command=self._auto_record_and_render,
+            fg_color="#e65100", hover_color="#bf360c",
+            text_color="#ffffff", font=("JetBrains Mono", 12, "bold"),
+            height=36)
+        self.btn_auto_render.pack(side="left", padx=(12, 0))
+
+        # Status del renderizado
+        self.render_status = ctk.CTkLabel(
+            controls_frame, text="",
+            font=("JetBrains Mono", 10), text_color=COLORS["accent_cyan"])
+        self.render_status.pack(fill="x", padx=12, pady=(4, 8))
+
+    def _draw_timeline(self, timestamps: dict):
+        """Dibuja los bloques de timeline en el canvas basado en timestamps."""
+        self.timestamps = timestamps
+        canvas = self.timeline_canvas
+        canvas.delete("all")
+
+        if not timestamps:
+            canvas.create_text(
+                canvas.winfo_width() // 2, 80,
+                text="Sin datos de timeline.\nEjecuta el Director para generar timestamps.",
+                fill="#6a6a7a", font=("JetBrains Mono", 12), justify="center")
+            return
+
+        # Calcular dimensiones
+        w = canvas.winfo_width() or 800
+        h = canvas.winfo_height() or 180
+        padding = 30
+        usable_w = w - 2 * padding
+
+        max_time = max(timestamps.values()) + 5.0 if timestamps else 60
+        scale = usable_w / max_time
+
+        # Actualizar label de duración
+        self.timeline_duration_lbl.configure(text=f"⏱ {max_time:.1f}s")
+
+        # Colores por tipo
+        type_colors = {
+            "audio": "#3498db", "narr": "#3498db",
+            "command": "#e74c3c", "tts": "#3498db",
+            "pause": "#f1c40f", "menu": "#27ae60"
+        }
+        type_heights = {
+            "audio": 40, "narr": 40,
+            "command": 50, "tts": 40,
+            "pause": 25, "menu": 35
+        }
+
+        # Línea base
+        base_y = h - 30
+        canvas.create_line(padding, base_y, w - padding, base_y,
+                          fill="#2a2b3e", width=2)
+
+        # Marcas de tiempo cada 5s
+        for t in range(0, int(max_time) + 5, 5):
+            x = padding + t * scale
+            canvas.create_line(x, base_y - 5, x, base_y + 5, fill="#4a4b5e", width=1)
+            canvas.create_text(x, base_y + 15, text=f"{t}s",
+                             fill="#6a6a7a", font=("JetBrains Mono", 8))
+
+        # Dibujar bloques
+        for key, start_time in timestamps.items():
+            x = padding + start_time * scale
+            block_w = max(scale * 3, 8)  # Mínimo 8px
+
+            # Detectar tipo
+            color = "#3498db"
+            block_h = 35
+            for ttype, tcolor in type_colors.items():
+                if ttype in key.lower():
+                    color = tcolor
+                    block_h = type_heights.get(ttype, 35)
+                    break
+
+            y1 = base_y - block_h - 5
+            y2 = base_y - 5
+
+            # Bloque con borde redondeado simulado
+            canvas.create_rectangle(x, y1, x + block_w, y2,
+                                   fill=color, outline="", stipple="")
+            canvas.create_rectangle(x, y1, x + block_w, y2,
+                                   fill="", outline=color, width=1)
+
+            # Label del bloque
+            label = key.split("_")[-1][:6]
+            canvas.create_text(x + block_w / 2, y1 - 8,
+                             text=label, fill=color,
+                             font=("JetBrains Mono", 7))
+
+    def _select_raw_video(self):
+        """Abre file dialog para seleccionar video crudo."""
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Seleccionar Video Crudo",
+            filetypes=[("Video MP4", "*.mp4"), ("Todos", "*.*")],
+            initialdir=self.workspace_dir
+        )
+        if path:
+            self._raw_video_path = path
+            name = os.path.basename(path)
+            self.video_path_lbl.configure(text=f"📹 {name}")
+            self.append_chat("Sistema", f"📂 Video seleccionado: {name}")
+
+    def _manual_render(self):
+        """Modo Manual: sincroniza video OBS + audios + exporta."""
+        if not self._raw_video_path or not os.path.exists(self._raw_video_path):
+            self.append_chat("Error", "❌ Selecciona un video crudo primero.")
+            return
+
+        self.render_status.configure(text="🔄 Renderizando...")
+        self.btn_manual_render.configure(state="disabled")
+
+        import threading
+        threading.Thread(target=self._do_render, args=(self._raw_video_path,), daemon=True).start()
+
+    def _auto_record_and_render(self):
+        """Modo Auto: graba pantalla + ejecuta director + renderiza."""
+        json_data = self._parse_editor_json()
+        if json_data is None:
+            return
+
+        if not self.wid_b:
+            self.append_chat("Error", "❌ No hay Terminal B.")
+            return
+
+        self.render_status.configure(text="🤖 Auto-grabando...")
+        self.btn_auto_render.configure(state="disabled")
+
+        import threading
+        threading.Thread(target=self._auto_thread, args=(json_data,), daemon=True).start()
+
+    def _auto_thread(self, json_data):
+        """Thread de grabación automática + renderizado."""
+        try:
+            from kr_studio.core.record_engine import ScreenRecorder
+
+            recorder = ScreenRecorder(self.workspace_dir)
+            wid = self.wid_b
+
+            self.after(0, self.render_status.configure, {"text": "🔴 Grabando..."})
+
+            # Iniciar grabación
+            recorder.start(wid)
+            time.sleep(1.0)
+
+            # Ejecutar director
+            from kr_studio.core.director import DirectorEngine
+            director = DirectorEngine(self, json_data, self.workspace_dir)
+            director.wid_a = self.wid_a
+            director.wid_b = self.wid_b
+            director.typing_delay = self.typing_speed_ms
+            director.floating_ctrl = self._floating_ctrl
+
+            director._start_wall = time.monotonic()
+            director._run_sequence()
+
+            # Detener grabación
+            video_path = recorder.stop()
+            time.sleep(0.5)
+
+            # Guardar timestamps
+            self.timestamps = director.timestamps
+            self.after(0, self._draw_timeline, self.timestamps)
+
+            # Renderizar
+            self.after(0, self.render_status.configure, {"text": "🎬 Renderizando..."})
+            self._do_render(video_path)
+
+        except Exception as e:
+            self.after(0, self.render_status.configure, {"text": f"❌ Error: {e}"})
+        finally:
+            self.after(0, self.btn_auto_render.configure, {"state": "normal"})
+
+    def _do_render(self, video_path: str):
+        """Renderiza el video final con video_engine."""
+        try:
+            from kr_studio.core.video_engine import VideoEngine
+
+            engine = VideoEngine(self.workspace_dir)
+            output_path = os.path.join(self.workspace_dir, "VIRAL_REEL_FINAL.mp4")
+
+            # Buscar directorio de audios
+            audio_dirs = ["audio_solo", "audio_dynamic", "audio_tts"]
+            audio_dir = None
+            for d in audio_dirs:
+                path = os.path.join(self.workspace_dir, d)
+                if os.path.exists(path) and os.listdir(path):
+                    audio_dir = path
+                    break
+
+            if not audio_dir:
+                audio_dir = self.workspace_dir  # Fallback
+
+            # Si no hay timestamps, estimar desde JSON
+            if not self.timestamps:
+                json_data = self._parse_editor_json()
+                if json_data:
+                    self.timestamps = engine.get_timestamps_from_json(json_data)
+
+            result = engine.render(
+                video_path=video_path,
+                timestamps=self.timestamps,
+                audio_dir=audio_dir,
+                output_path=output_path
+            )
+
+            if result:
+                size_mb = os.path.getsize(result) / (1024 * 1024)
+                self.after(0, self.render_status.configure,
+                          {"text": f"✅ {os.path.basename(result)} ({size_mb:.1f} MB)"})
+                self.after(0, self.append_chat, "Sistema",
+                          f"✅ Video exportado: {result}\n   Tamaño: {size_mb:.1f} MB")
+            else:
+                self.after(0, self.render_status.configure,
+                          {"text": "❌ Error en renderizado"})
+        except Exception as e:
+            self.after(0, self.render_status.configure,
+                      {"text": f"❌ Error: {str(e)[:50]}"})
+        finally:
+            self.after(0, self.btn_manual_render.configure, {"state": "normal"})
 
     def _on_speed_change(self, value):
         self.typing_speed_ms = int(value)
