@@ -292,7 +292,7 @@ class SoloDirectorEngine:
         if self.use_wrapper:
             self._type_text(self.wid_b, "source venv/bin/activate", delay_ms=30)
             self._send_key(self.wid_b, "Return")
-        self._wait_continue("Terminal lista")
+            time.sleep(0.5)
 
         # ── SI HAY JSON DATA PRE-GENERADO ──
         if self.json_data:

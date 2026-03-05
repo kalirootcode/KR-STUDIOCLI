@@ -1087,8 +1087,11 @@ class MainWindow(ctk.CTkFrame):
 
         self._active_director.start()
 
-        self.after(duration * 60 * 1000 + 30000, lambda: self.btn_solo.configure(state="normal"))
-        self.after(duration * 60 * 1000 + 30000, lambda: self.btn_dynamic.configure(state="normal"))
+        timeout_ms = int(duration * 60 * 1000 + 30000)
+        self.after(timeout_ms, lambda: self.btn_solo.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_dynamic.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_launch.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_record.configure(state="normal"))
 
     def _get_last_user_topic(self) -> str:
         """Extrae el tema del último mensaje del usuario en el chat."""
@@ -1571,6 +1574,8 @@ class MainWindow(ctk.CTkFrame):
         self.append_chat("Sistema", f"🎬 Lanzando secuencia {mode_name} ({mode_txt}, tipeo: {self.typing_speed_ms}ms)...")
         self.btn_launch.configure(state="disabled")
         self.btn_record.configure(state="disabled")
+        self.btn_solo.configure(state="disabled")
+        self.btn_dynamic.configure(state="disabled")
 
         if is_solo:
             from kr_studio.core.solo_director import SoloDirectorEngine
@@ -1603,8 +1608,13 @@ class MainWindow(ctk.CTkFrame):
 
         # Activar botón Detener, desactivar Lanzar/Grabar
         self.btn_stop.configure(state="normal")
-        self.after(5000, lambda: self.btn_launch.configure(state="normal"))
-        self.after(5000, lambda: self.btn_record.configure(state="normal"))
+        
+        # Calcular timeout de bloqueo basado en la duración solicitada + 30 seg de gracia
+        timeout_ms = int(self.video_duration_min * 60 * 1000 + 30000)
+        self.after(timeout_ms, lambda: self.btn_launch.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_record.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_solo.configure(state="normal"))
+        self.after(timeout_ms, lambda: self.btn_dynamic.configure(state="normal"))
 
     def stop_director(self):
         """Detiene la secuencia del Director inmediatamente."""
@@ -1614,6 +1624,8 @@ class MainWindow(ctk.CTkFrame):
         self.btn_stop.configure(state="disabled")
         self.btn_launch.configure(state="normal")
         self.btn_record.configure(state="normal")
+        self.btn_solo.configure(state="normal")
+        self.btn_dynamic.configure(state="normal")
 
     # ═══════════════════════════════════════════════
     # SISTEMA DE PROYECTOS
