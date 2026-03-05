@@ -1409,9 +1409,15 @@ class MainWindow(ctk.CTkFrame):
                     "1. IGNORA EL FLUJO DE 'MENU'. NO uses el tipo de escena 'menu' ni 'leer'.\n"
                     "2. Empieza directamente con una 'narracion' introduciendo el tema.\n"
                     "3. Usa escenas de 'ejecucion' para mostrar los comandos reales en la Terminal B.\n"
+                    "   IMPORTANTE: Toda escena de tipo 'ejecucion' DEBE OBLIGATORIAMENTE incluir la clave 'comando_visual' con el comando exacto a tipear en la terminal.\n"
                     "4. Intercala 'narracion' explicando qué hace cada comando y qué resultados esperar.\n"
                     "5. Puedes usar 'pausa' de 2 a 3 segundos si es necesario.\n"
                     "6. Cierra con una 'narracion' de despedida.\n"
+                    "ESTRUCTURA JSON REQUERIDA:\n"
+                    "[\n"
+                    "  {\"tipo\": \"narracion\", \"voz\": \"Texto a hablar\"},\n"
+                    "  {\"tipo\": \"ejecucion\", \"comando_visual\": \"nmap -sV target\", \"voz\": \"Explicación en audio...\"}\n"
+                    "]\n"
                     "El JSON debe contener toda la interacción técnica directa con la terminal."
                 )
 

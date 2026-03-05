@@ -349,8 +349,13 @@ class SoloDirectorEngine:
         elif tipo == "ejecucion":
             cmd = escena.get("comando_visual", "")
             if not cmd:
-                cmd = escena.get("voz", "ls -l") # fallback
-            
+                fallback = escena.get("voz", "")
+                # Si el fallback es un párrafo largo (narración accidental), usar ls en su lugar
+                if len(fallback.split()) > 5:
+                    cmd = "ls -l"
+                else:
+                    cmd = fallback if fallback else "ls -l"
+
             # Registrar timestamp en ejecución de comando
             rel_time = time.monotonic() - self._start_wall
             self.timestamps["ejecucion"].append(round(rel_time, 2))
