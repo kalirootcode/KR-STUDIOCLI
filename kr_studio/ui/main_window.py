@@ -990,11 +990,10 @@ class MainWindow(ctk.CTkFrame):
             self.append_chat("Error", "❌ Conecta la API Key primero.")
             return
 
-        # Obtener el tema del último mensaje del chat
+        # Obtener el tema del último mensaje del chat o usar default
         topic = self._get_last_user_topic()
         if not topic:
-            self.append_chat("Error", "❌ Escribe un tema en el chat primero.\nEjemplo: 'créame un post sobre metasploit'")
-            return
+            topic = "Modo Dinámico"
 
         duration = self.video_duration_min
         self.append_chat("Sistema",
@@ -1044,8 +1043,7 @@ class MainWindow(ctk.CTkFrame):
 
         topic = self._get_last_user_topic()
         if not topic:
-            self.append_chat("Error", "❌ Escribe un tema en el chat primero.")
-            return
+            topic = "Modo Solo"
 
         duration = self.video_duration_min
         wrapper = self.use_wrapper_var.get()
