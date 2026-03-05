@@ -1069,6 +1069,13 @@ class MainWindow(ctk.CTkFrame):
         self._active_director.use_wrapper = wrapper
         self._active_director.on_json_terminal_b = self._inject_json_editor_b
 
+        # ── Inyectar JSON si hay contenido válido en Editor B ──
+        self._active_tab = "b"  # Forzar parseo de laTerminal B
+        json_data = self._parse_editor_json()
+        if json_data:
+            self._active_director.json_data = json_data
+            self.append_chat("Sistema", f"📌 JSON inyectado: {len(json_data)} escenas")
+
         self.btn_stop.configure(state="normal")
         self.btn_launch.configure(state="disabled")
         self.btn_record.configure(state="disabled")
