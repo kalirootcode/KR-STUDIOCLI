@@ -1,0 +1,19 @@
+# API Keys y secretos
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Workspace y archivos generados
+kr_studio/workspace/
+kr_studio/projects/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
