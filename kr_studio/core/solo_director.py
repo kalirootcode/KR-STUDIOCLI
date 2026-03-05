@@ -476,6 +476,12 @@ class SoloDirectorEngine:
             rel_time = time.monotonic() - self._start_wall
             self.timestamps["ejecucion"].append(round(rel_time, 2))
 
+            cmd_final = self._wrap_command(cmd)
+            self._type_text(self.wid_b, cmd_final)
+            time.sleep(1.0)
+            self._send_key(self.wid_b, "Return")
+            
+            # 1. Reproducir la voz DESPUÉS de lanzar el comando, mientras corre
             if voz:
                 path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
                 if os.path.exists(path):
@@ -483,14 +489,47 @@ class SoloDirectorEngine:
                 else:
                     threading.Thread(target=self.tts.speak_and_wait, args=(voz,), daemon=True).start()
 
-            cmd_final = self._wrap_command(cmd)
-            self._type_text(self.wid_b, cmd_final)
-            time.sleep(1.0)
-            self._send_key(self.wid_b, "Return")
-            
-            # Wait for command output (using log size detection)
-            self._wait_for_command_done(20)
+            # 2. Esperar a que el comando termine
+            self._flog("  ⏳ Esperando output...", "wait")
+            cmd_output = self._wait_for_command_done(20)
             time.sleep(1.5)
+
+            # 3. Analizar la salida por si hubo error
+            self._flog("  🧠 AI analizando salida...", "info")
+            analysis = self._analyze_output(cmd, cmd_output)
+            
+            tiene_error = analysis.get("tiene_error", False)
+            cmd_corregido = analysis.get("comando_corregido", "")
+            error_exp = analysis.get("explicacion_error", "")
+            resumen = analysis.get("resumen_tts", "")
+
+            # Guardar el análisis en el chat explícitamente sin tocar el JSON
+            if resumen:
+                self._log("AI Analysis", f"📝 Resultado: {resumen}")
+
+            if tiene_error and cmd_corregido:
+                self._log("AI Analysis", f"⚠ Error detectado. Acción: {error_exp}")
+                self._flog(f"  ⚠ Error → corrigiendo", "error")
+                
+                # Explicar el error
+                if error_exp:
+                    self.tts.speak_and_wait(error_exp)
+                
+                # Ejecutar comando corregido
+                corrected = self._wrap_command(cmd_corregido)
+                self._flog(f"  🔧 {corrected[:45]}", "ok")
+                self._type_text(self.wid_b, corrected)
+                time.sleep(0.3)
+                self._send_key(self.wid_b, "Return")
+                
+                fix_output = self._wait_for_command_done(max_wait=25)
+                
+                # Analizar resultado del parche (opcional, sin bucle infinito)
+                fix_analysis = self._analyze_output(cmd_corregido, fix_output)
+                fix_resumen = fix_analysis.get("resumen_tts", "")
+                if fix_resumen:
+                    self._log("AI Analysis", f"🛠 Fix: {fix_resumen}")
+                    self.tts.speak_and_wait(fix_resumen)
 
         elif tipo == "pausa":
             delay = float(escena.get("espera", 3.0))
