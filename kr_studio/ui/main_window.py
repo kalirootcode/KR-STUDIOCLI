@@ -62,6 +62,7 @@ class MainWindow(ctk.CTkFrame):
         self.video_duration_min = 5
         self.use_wrapper_var = None  # Se crea en _build_editor_panel
         self.timestamps = {}
+        self._active_mode = "dual"  # "dual" o "solo" — controla routing de JSON
         self._raw_video_path = None
 
         # ─── LAYOUT: API Bar + Tabview ───
@@ -665,6 +666,15 @@ class MainWindow(ctk.CTkFrame):
                      font=("JetBrains Mono", 11, "bold"),
                      text_color=COLORS["text_dim"]).pack(side="left")
 
+        self.post_mode_var = ctk.StringVar(value="DUAL AI")
+        self.post_mode_selector = ctk.CTkSegmentedButton(
+            auto_row, values=["DUAL AI", "SOLO TERM"], variable=self.post_mode_var,
+            font=("JetBrains Mono", 10, "bold"), width=120, height=28,
+            fg_color=COLORS["bg_dark"], selected_color=COLORS["accent_cyan"],
+            selected_hover_color="#00b8d4"
+        )
+        self.post_mode_selector.pack(side="left", padx=(12, 12))
+
         self.btn_auto_render = ctk.CTkButton(
             auto_row, text="🤖 Auto-Grabar y Renderizar", width=250,
             command=self._auto_record_and_render,
@@ -813,16 +823,31 @@ class MainWindow(ctk.CTkFrame):
             recorder.start(wid)
             time.sleep(1.0)
 
-            # Ejecutar director
-            from kr_studio.core.director import DirectorEngine
-            director = DirectorEngine(self, json_data, self.workspace_dir)
-            director.wid_a = self.wid_a
-            director.wid_b = self.wid_b
+            # Ejecutar director según modo seleccionado
+            mode = self.post_mode_var.get()
+            
+            if mode == "SOLO TERM":
+                from kr_studio.core.solo_director import SoloDirectorEngine
+                topic = self._get_last_user_topic() or "Test"
+                director = SoloDirectorEngine(self.master_app, topic, self.video_duration_min, self.workspace_dir)
+                director.wid_b = self.wid_b
+            else:
+                from kr_studio.core.director import DirectorEngine
+                director = DirectorEngine(self, json_data, self.workspace_dir)
+                director.wid_a = self.wid_a
+                director.wid_b = self.wid_b
+                
             director.typing_delay = self.typing_speed_ms
             director.floating_ctrl = self._floating_ctrl
 
             director._start_wall = time.monotonic()
-            director._run_sequence()
+            
+            if mode == "SOLO TERM":
+                # En SOLO, inyectamos JSON en tiempo real a Terminal B
+                director.on_json_terminal_b = self._inject_json_editor_b
+                director._run_solo_sequence()
+            else:
+                director._run_sequence()
 
             # Detener grabación
             video_path = recorder.stop()
@@ -1355,15 +1380,22 @@ class MainWindow(ctk.CTkFrame):
 
             if json_data:
                 self.after(0, self._stop_processing_animation)
+                target_editor = "Editor B" if self._active_mode == "solo" else "Editor A"
                 self.after(0, self.append_chat, "DOMINION",
-                           f"✅ Guion generado — {len(json_data)} escenas. Revisa el Editor →")
+                           f"✅ Guion generado — {len(json_data)} escenas. Revisa {target_editor} →")
                 json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
 
                 def inject_json():
-                    self.editor.delete("1.0", "end")
-                    self.editor.insert("end", json_str)
-                    self._update_editor()
-                    # Auto-save
+                    if self._active_mode == "solo":
+                        # Solo mode → JSON va a editor B
+                        self.editor_b.delete("1.0", "end")
+                        self.editor_b.insert("end", json_str)
+                        self._switch_editor_tab("b")
+                    else:
+                        # Dual mode → JSON va a editor A
+                        self.editor.delete("1.0", "end")
+                        self.editor.insert("end", json_str)
+                        self._update_editor()
                     self._auto_save_project(json_data)
 
                 self.after(0, inject_json)
