@@ -93,6 +93,13 @@ class SoloDirectorEngine:
         self.total_cycles = max(2, duration_min // 2)
 
         self.on_json_terminal_b = None
+        self.json_data = None  # Agregado para soportar ejecución de scripts pre-generados
+        self.timestamps = {
+            "menu": [],
+            "ejecucion": [],
+            "pausa": []
+        }
+        self._start_wall = 0.0
 
     def start(self):
         self.is_running = True
@@ -258,6 +265,7 @@ class SoloDirectorEngine:
             self.is_running = False
             return
 
+        self._start_wall = time.monotonic()
         self._resize_window(self.wid_b)
 
         # ── OBS (solo Terminal-B) ──
@@ -285,124 +293,143 @@ class SoloDirectorEngine:
 
         self._wait_continue("Terminal lista")
 
-        # ── Narración introductoria ──
-        self.tts.speak_and_wait(
-            f"Bienvenidos. Hoy vamos a explorar {self.topic} con demostraciones prácticas en vivo."
-        )
+        self._wait_continue("Terminal lista")
 
-        # ── CICLOS ADAPTATIVOS ──
-        all_commands = []
-        last_output = ""
+        # ── SI HAY JSON DATA PRE-GENERADO ──
+        if self.json_data:
+            self._flog(f"Iniciando guion: {len(self.json_data)} escenas", "info")
+            total = len(self.json_data)
+            for i, escena in enumerate(self.json_data):
+                if not self.is_running:
+                    break
+                
+                self.current_cycle = i + 1
+                if self.floating_ctrl:
+                    self.floating_ctrl.set_progress(self.current_cycle, total)
+                
+                self._ejecutar_escena_json(escena, i)
+            
+            self.tts.speak_and_wait("Secuencia completada. Revisar logs detallados.")
+            
+        else:
+            # ── SI NO HAY JSON (MODO ADAPTATIVO AI) ──
+            self.tts.speak_and_wait(
+                f"Bienvenidos. Hoy vamos a explorar {self.topic} con demostraciones prácticas en vivo."
+            )
 
-        for cycle in range(1, self.total_cycles + 1):
-            if not self.is_running:
-                break
+            # ── CICLOS ADAPTATIVOS ──
+            all_commands = []
+            last_output = ""
 
-            self.current_cycle = cycle
-            self._flog(f"═══ CICLO {cycle}/{self.total_cycles} ═══", "step")
-
-            if self.floating_ctrl:
-                self.floating_ctrl.set_progress(cycle, self.total_cycles)
-
-            # ── 1. AI genera plan de comandos ──
-            self._flog("  🤖 AI planificando...", "wait")
-
-            context_block = ""
-            if last_output:
-                context_block = (
-                    f"RESULTADOS ANTERIORES:\n{last_output[:2000]}\n\n"
-                    f"Comandos ejecutados: {', '.join(all_commands[-5:])}\n"
-                    f"Profundiza con nuevos comandos basándote en esto."
-                )
-            else:
-                context_block = "Primer ciclo. Comienza con reconocimiento básico."
-
-            wrapper_instruction = (
-                "IMPORTANTE: Todos los comandos deben usar el wrapper kr-cli.\n"
-                "Ejemplo: 'kr-cli nmap -sV target' en vez de 'nmap -sV target'"
-            ) if self.use_wrapper else "Comandos LIMPIOS (directos en terminal)."
-
-            plan = self._generate_plan(context_block, wrapper_instruction, cycle)
-
-            if not plan:
-                self._flog("  Sin plan generado", "error")
-                continue
-
-            self._flog(f"  {len(plan)} comandos planeados ✅", "ok")
-            self._show_json_b(plan)
-
-            # ── 2. Ejecutar cada comando adaptativamente ──
-            for ci, cmd_item in enumerate(plan):
+            for cycle in range(1, self.total_cycles + 1):
                 if not self.is_running:
                     break
 
-                raw_cmd = cmd_item.get("comando", "")
-                desc = cmd_item.get("descripcion_corta", "")
-                if not raw_cmd:
+                self.current_cycle = cycle
+                self._flog(f"═══ CICLO {cycle}/{self.total_cycles} ═══", "step")
+
+                if self.floating_ctrl:
+                    self.floating_ctrl.set_progress(cycle, self.total_cycles)
+
+                # ── 1. AI genera plan de comandos ──
+                self._flog("  🤖 AI planificando...", "wait")
+
+                context_block = ""
+                if last_output:
+                    context_block = (
+                        f"RESULTADOS ANTERIORES:\n{last_output[:2000]}\n\n"
+                        f"Comandos ejecutados: {', '.join(all_commands[-5:])}\n"
+                        f"Profundiza con nuevos comandos basándote en esto."
+                    )
+                else:
+                    context_block = "Primer ciclo. Comienza con reconocimiento básico."
+
+                wrapper_instruction = (
+                    "IMPORTANTE: Todos los comandos deben usar el wrapper kr-cli.\n"
+                    "Ejemplo: 'kr-cli nmap -sV target' en vez de 'nmap -sV target'"
+                ) if self.use_wrapper else "Comandos LIMPIOS (directos en terminal)."
+
+                plan = self._generate_plan(context_block, wrapper_instruction, cycle)
+
+                if not plan:
+                    self._flog("  Sin plan generado", "error")
                     continue
 
-                final_cmd = self._wrap_command(raw_cmd)
+                self._flog(f"  {len(plan)} comandos planeados ✅", "ok")
+                self._show_json_b(plan)
 
-                # Narrar brevemente qué vamos a hacer
-                if desc:
-                    self.tts.speak_and_wait(desc)
+                # ── 2. Ejecutar cada comando adaptativamente ──
+                for ci, cmd_item in enumerate(plan):
+                    if not self.is_running:
+                        break
 
-                # Ejecutar comando
-                self._flog(f"  > {final_cmd[:45]}", "ok")
-                self._focus_window(self.wid_b)
-                self._type_text(self.wid_b, final_cmd)
-                time.sleep(0.3)
-                self._send_key(self.wid_b, "Return")
+                    raw_cmd = cmd_item.get("comando", "")
+                    desc = cmd_item.get("descripcion_corta", "")
+                    if not raw_cmd:
+                        continue
 
-                # Esperar a que termine (detección automática)
-                self._flog("  ⏳ Esperando output...", "wait")
-                cmd_output = self._wait_for_command_done(max_wait=25)
-                all_commands.append(raw_cmd)
+                    final_cmd = self._wrap_command(raw_cmd)
 
-                # AI analiza el resultado
-                self._flog("  🧠 AI analizando...", "info")
-                analysis = self._analyze_output(raw_cmd, cmd_output)
+                    # Narrar brevemente qué vamos a hacer
+                    if desc:
+                        self.tts.speak_and_wait(desc)
 
-                resumen = analysis.get("resumen_tts", "")
-                tiene_error = analysis.get("tiene_error", False)
-                cmd_corregido = analysis.get("comando_corregido", "")
-                error_exp = analysis.get("explicacion_error", "")
-
-                # Narrar resumen del resultado
-                if resumen:
-                    self.tts.speak_and_wait(resumen)
-
-                # Si hay error → explicar y ejecutar corrección
-                if tiene_error and cmd_corregido:
-                    self._flog(f"  ⚠ Error detectado → corrigiendo", "error")
-
-                    if error_exp:
-                        self.tts.speak_and_wait(error_exp)
-
-                    corrected = self._wrap_command(cmd_corregido)
-                    self._flog(f"  🔧 {corrected[:45]}", "ok")
+                    # Ejecutar comando
+                    self._flog(f"  > {final_cmd[:45]}", "ok")
                     self._focus_window(self.wid_b)
-                    self._type_text(self.wid_b, corrected)
+                    self._type_text(self.wid_b, final_cmd)
                     time.sleep(0.3)
                     self._send_key(self.wid_b, "Return")
 
-                    fix_output = self._wait_for_command_done(max_wait=25)
-                    all_commands.append(cmd_corregido)
+                    # Esperar a que termine (detección automática)
+                    self._flog("  ⏳ Esperando output...", "wait")
+                    cmd_output = self._wait_for_command_done(max_wait=25)
+                    all_commands.append(raw_cmd)
 
-                    # Analizar resultado de la corrección
-                    fix_analysis = self._analyze_output(cmd_corregido, fix_output)
-                    fix_resumen = fix_analysis.get("resumen_tts", "")
-                    if fix_resumen:
-                        self.tts.speak_and_wait(fix_resumen)
+                    # AI analiza el resultado
+                    self._flog("  🧠 AI analizando...", "info")
+                    analysis = self._analyze_output(raw_cmd, cmd_output)
 
-                self._wait_continue(f"Cmd {ci+1} listo")
+                    resumen = analysis.get("resumen_tts", "")
+                    tiene_error = analysis.get("tiene_error", False)
+                    cmd_corregido = analysis.get("comando_corregido", "")
+                    error_exp = analysis.get("explicacion_error", "")
 
-            # Guardar último output para contexto
-            last_output = read_log_file(LOG_TERMINAL_B, 40)
-            self._flog(f"  Terminal B: {len(last_output.split(chr(10)))} líneas ✅", "ok")
+                    # Narrar resumen del resultado
+                    if resumen:
+                        self.tts.speak_and_wait(resumen)
 
-            if cycle < self.total_cycles and self.is_running:
-                self._wait_continue(f"Listo para ciclo {cycle+1}")
+                    # Si hay error → explicar y ejecutar corrección
+                    if tiene_error and cmd_corregido:
+                        self._flog(f"  ⚠ Error detectado → corrigiendo", "error")
+
+                        if error_exp:
+                            self.tts.speak_and_wait(error_exp)
+
+                        corrected = self._wrap_command(cmd_corregido)
+                        self._flog(f"  🔧 {corrected[:45]}", "ok")
+                        self._focus_window(self.wid_b)
+                        self._type_text(self.wid_b, corrected)
+                        time.sleep(0.3)
+                        self._send_key(self.wid_b, "Return")
+
+                        fix_output = self._wait_for_command_done(max_wait=25)
+                        all_commands.append(cmd_corregido)
+
+                        # Analizar resultado de la corrección
+                        fix_analysis = self._analyze_output(cmd_corregido, fix_output)
+                        fix_resumen = fix_analysis.get("resumen_tts", "")
+                        if fix_resumen:
+                            self.tts.speak_and_wait(fix_resumen)
+
+                    self._wait_continue(f"Cmd {ci+1} listo")
+
+                # Guardar último output para contexto
+                last_output = read_log_file(LOG_TERMINAL_B, 40)
+                self._flog(f"  Terminal B: {len(last_output.split(chr(10)))} líneas ✅", "ok")
+
+                if cycle < self.total_cycles and self.is_running:
+                    self._wait_continue(f"Listo para ciclo {cycle+1}")
 
         # ── Narración de cierre ──
         self.tts.speak_and_wait(
@@ -419,6 +446,57 @@ class SoloDirectorEngine:
 
         self.tts.cleanup()
         self.is_running = False
-        self._log("Director", f"✅ Video Solo completado — {len(all_commands)} comandos")
+        self._log("Director", f"✅ Video Solo completado.")
         if self.floating_ctrl:
             self.floating_ctrl.notify_finished()
+
+    # ── Ejecución Lineal JSON para Modo Solo ──
+    def _ejecutar_escena_json(self, escena: dict, index: int):
+        tipo = escena.get("tipo", "")
+        voz = escena.get("voz", "")
+
+        self._log("Director", f"▶ Escena {index+1} [{tipo}]")
+        self._flog(f"Escena {index+1}: {tipo}", "step")
+
+        if tipo == "narracion":
+            if voz:
+                # Reproducir audio generado previamente (o generarlo al vuelo si no existe)
+                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
+                if os.path.exists(path):
+                    self.tts.play_audio(path)
+                else:
+                    self.tts.speak_and_wait(voz)
+
+        elif tipo == "ejecucion":
+            cmd = escena.get("comando_visual", "")
+            if not cmd:
+                cmd = escena.get("voz", "ls -l") # fallback
+            
+            # Registrar timestamp en ejecución de comando
+            rel_time = time.monotonic() - self._start_wall
+            self.timestamps["ejecucion"].append(round(rel_time, 2))
+
+            if voz:
+                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
+                if os.path.exists(path):
+                    self.tts.play_audio_bg(path)
+                else:
+                    threading.Thread(target=self.tts.speak_and_wait, args=(voz,), daemon=True).start()
+
+            cmd_final = self._wrap_command(cmd)
+            self._type_text(self.wid_b, cmd_final)
+            time.sleep(1.0)
+            self._send_key(self.wid_b, "Return")
+            
+            # Wait for command output (using log size detection)
+            self._wait_for_command_done(20)
+            time.sleep(1.5)
+
+        elif tipo == "pausa":
+            delay = float(escena.get("espera", 3.0))
+            rel_time = time.monotonic() - self._start_wall
+            self.timestamps["pausa"].append(round(rel_time, 2))
+            
+            self._flog(f"  Pausa: {delay}s", "wait")
+            time.sleep(delay)
+
