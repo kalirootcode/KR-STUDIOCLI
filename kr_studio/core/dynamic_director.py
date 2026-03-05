@@ -18,7 +18,7 @@ import time
 import os
 import re
 import json
-from kr_studio.core.audio_engine import AudioEngine
+from kr_studio.core.tts_engine import TTSEngine
 from kr_studio.core.obs_controller import OBSController
 
 # Archivos de log para leer terminales sin interrumpir
@@ -50,6 +50,23 @@ Responde SOLO JSON:
   {{"tipo": "ejecucion", "voz": "Descripción corta", "comando_real": "comando"}},
   {{"tipo": "pausa", "voz": "Analizando", "espera": 4.0}}
 ]"""
+
+PROMPT_ANALYZE_CMD_OUTPUT = """Eres un narrador de videos de ciberseguridad.
+Se ejecutó este comando en Terminal B:
+
+COMANDO: {command}
+OUTPUT:
+{output}
+
+Genera un resumen técnico para narrar en voz (TTS).
+REGLAS:
+- NO digas el comando (ya se ve en pantalla)
+- Explica QUÉ significan los resultados en 2-3 frases
+- Si hay error: explica por qué y qué haremos
+- Máximo 40 palabras
+
+Responde SOLO JSON:
+{{"resumen_tts": "...", "tiene_error": false, "comando_corregido": "", "explicacion_error": ""}}"""
 
 PROMPT_GENERATE_FOLLOWUP = """Eres un experto creando un video de ciberseguridad CONTINUO y profesional.
 
@@ -114,7 +131,7 @@ class DynamicDirectorEngine:
         self.topic = topic
         self.duration_min = max(1, min(30, duration_min))
         self.workspace_dir = workspace_dir
-        self.audio_engine = AudioEngine()
+        self.tts = TTSEngine(workspace_dir, "audio_dynamic")
         self.is_running = False
 
         self.wid_a = None
@@ -143,6 +160,49 @@ class DynamicDirectorEngine:
 
     def stop(self):
         self.is_running = False
+        self.tts.stop_current()
+
+    # ─── Command Completion Detection ───
+
+    def _wait_for_command_done(self, log_path: str, max_wait: int = 25) -> str:
+        """Monitorea log hasta que el output deje de crecer por 1.5s."""
+        prev_size = 0
+        stable_count = 0
+        for _ in range(max_wait * 2):
+            if not self.is_running:
+                break
+            time.sleep(0.5)
+            try:
+                size = os.path.getsize(log_path)
+            except OSError:
+                size = 0
+            if size == prev_size:
+                stable_count += 1
+                if stable_count >= 3:
+                    break
+            else:
+                stable_count = 0
+                prev_size = size
+        return read_log_file(log_path, 25)
+
+    def _analyze_cmd_output(self, command: str, output: str) -> dict:
+        """AI analiza output de comando → resumen TTS + detección de error."""
+        if not self.ai_engine or not self.ai_engine.chat_session:
+            return {"resumen_tts": "", "tiene_error": False}
+        try:
+            prompt = PROMPT_ANALYZE_CMD_OUTPUT.format(
+                command=command,
+                output=output[-2000:] if len(output) > 2000 else output
+            )
+            response = self.ai_engine.chat_session.send_message(prompt)
+            data = self.ai_engine.extraer_json(response.text)
+            if isinstance(data, dict):
+                return data
+            elif isinstance(data, list) and len(data) > 0:
+                return data[0]
+            return {"resumen_tts": "", "tiene_error": False}
+        except Exception:
+            return {"resumen_tts": "", "tiene_error": False}
 
     # ─── X11 Utils ───
 
@@ -380,7 +440,7 @@ class DynamicDirectorEngine:
                 self._show_json_b(commands_json)
 
                 # ══════════════════════════════════════
-                # FASE D: Ejecutar en Terminal B
+                # FASE D: Ejecutar en Terminal B (ADAPTATIVO)
                 # ══════════════════════════════════════
                 if obs_ok:
                     self.obs.switch_scene("Terminal-B")
@@ -394,12 +454,40 @@ class DynamicDirectorEngine:
                         comando = cmd.get("comando_real", "")
                         if comando:
                             self._flog(f"  B> {comando[:40]}", "ok")
+                            self._focus_window(self.wid_b)
                             self._type_text(self.wid_b, comando)
-                            time.sleep(0.8)
+                            time.sleep(0.3)
                             self._send_key(self.wid_b, "Return")
-                            time.sleep(3.0)
+
+                            # Detectar fin del comando automáticamente
+                            self._flog("  ⏳ Esperando output...", "wait")
+                            cmd_output = self._wait_for_command_done(LOG_TERMINAL_B, max_wait=25)
                             executed_list.append(comando)
-                            self._wait_continue(f"Cmd {ci+1} ejecutado")
+
+                            # AI analiza resultado → narrar resumen
+                            analysis = self._analyze_cmd_output(comando, cmd_output)
+                            resumen = analysis.get("resumen_tts", "")
+                            if resumen:
+                                self.tts.speak_and_wait(resumen)
+
+                            # Si hay error → corregir automáticamente
+                            if analysis.get("tiene_error") and analysis.get("comando_corregido"):
+                                error_exp = analysis.get("explicacion_error", "")
+                                if error_exp:
+                                    self.tts.speak_and_wait(error_exp)
+                                corrected = analysis["comando_corregido"]
+                                self._flog(f"  🔧 {corrected[:40]}", "ok")
+                                self._focus_window(self.wid_b)
+                                self._type_text(self.wid_b, corrected)
+                                time.sleep(0.3)
+                                self._send_key(self.wid_b, "Return")
+                                fix_out = self._wait_for_command_done(LOG_TERMINAL_B)
+                                fix_a = self._analyze_cmd_output(corrected, fix_out)
+                                if fix_a.get("resumen_tts"):
+                                    self.tts.speak_and_wait(fix_a["resumen_tts"])
+                                executed_list.append(corrected)
+
+                            self._wait_continue(f"Cmd {ci+1} listo")
 
                     elif cmd.get("tipo") == "pausa":
                         time.sleep(cmd.get("espera", 3.0))
