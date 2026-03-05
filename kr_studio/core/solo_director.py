@@ -104,6 +104,9 @@ class SoloDirectorEngine:
     def start(self):
         self.is_running = True
         try:
+            self._log("Debug", f"SoloDirectorEngine.start() llamado. json_data existe: {self.json_data is not None}")
+            if self.json_data:
+                self._log("Debug", f"Scenes in json_data: {len(self.json_data)}")
             open(LOG_TERMINAL_B, 'w').close()
         except Exception:
             pass
@@ -289,14 +292,11 @@ class SoloDirectorEngine:
         if self.use_wrapper:
             self._type_text(self.wid_b, "source venv/bin/activate", delay_ms=30)
             self._send_key(self.wid_b, "Return")
-            time.sleep(1.0)
-
-        self._wait_continue("Terminal lista")
-
         self._wait_continue("Terminal lista")
 
         # ── SI HAY JSON DATA PRE-GENERADO ──
         if self.json_data:
+            self._log("Debug", "Tomando ruta de EJECUCIÓN LINEAL DE JSON")
             self._flog(f"Iniciando guion: {len(self.json_data)} escenas", "info")
             total = len(self.json_data)
             for i, escena in enumerate(self.json_data):
@@ -312,6 +312,7 @@ class SoloDirectorEngine:
             self.tts.speak_and_wait("Secuencia completada. Revisar logs detallados.")
             
         else:
+            self._log("Debug", "Tomando ruta de IA DINÁMICA porque json_data es None o Vacío")
             # ── SI NO HAY JSON (MODO ADAPTATIVO AI) ──
             self.tts.speak_and_wait(
                 f"Bienvenidos. Hoy vamos a explorar {self.topic} con demostraciones prácticas en vivo."
@@ -462,10 +463,11 @@ class SoloDirectorEngine:
             if voz:
                 # Reproducir audio generado previamente (o generarlo al vuelo si no existe)
                 path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
-                if os.path.exists(path):
-                    self.tts.play_audio(path)
-                else:
-                    self.tts.speak_and_wait(voz)
+                if not os.path.exists(path):
+                    self._flog("Generando audio...", "info")
+                    from kr_studio.core.audio_engine import AudioEngine
+                    AudioEngine().generar_audio(voz, path)
+                self.tts.play_audio(path)
 
         elif tipo == "ejecucion":
             cmd = escena.get("comando_visual", "")
@@ -484,10 +486,10 @@ class SoloDirectorEngine:
             # 1. Reproducir la voz DESPUÉS de lanzar el comando, mientras corre
             if voz:
                 path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
-                if os.path.exists(path):
-                    self.tts.play_audio_bg(path)
-                else:
-                    threading.Thread(target=self.tts.speak_and_wait, args=(voz,), daemon=True).start()
+                if not os.path.exists(path):
+                    from kr_studio.core.audio_engine import AudioEngine
+                    AudioEngine().generar_audio(voz, path)
+                self.tts.play_audio_bg(path)
 
             # 2. Esperar a que el comando termine
             self._flog("  ⏳ Esperando output...", "wait")
