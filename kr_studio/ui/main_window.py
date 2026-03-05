@@ -1608,9 +1608,16 @@ class MainWindow(ctk.CTkFrame):
     # ═══════════════════════════════════════════════
 
     def _parse_editor_json(self):
-        json_str = self.editor.get("1.0", "end").strip()
+        active_tab = self.editor_tabs.get()
+        if active_tab == "Terminal B (Cmds)":
+            json_str = self.editor_b.get("1.0", "end").strip()
+            editor_name = "Terminal B"
+        else:
+            json_str = self.editor.get("1.0", "end").strip()
+            editor_name = "Terminal A"
+
         if not json_str:
-            self.append_chat("Sistema", "⚠ El editor está vacío.")
+            self.append_chat("Sistema", f"⚠ El editor de {editor_name} está vacío.")
             return None
         try:
             data = json.loads(json_str)
