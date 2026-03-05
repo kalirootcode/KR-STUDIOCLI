@@ -62,7 +62,7 @@ class MainWindow(ctk.CTkFrame):
         self.video_duration_min = 5
         self.use_wrapper_var = None  # Se crea en _build_editor_panel
         self.timestamps = {}
-        self._active_mode = "dual"  # "dual" o "solo" — controla routing de JSON
+        self.pre_mode_var = None  # Se crea en _build_chat_panel
         self._raw_video_path = None
 
         # ─── LAYOUT: API Bar + Tabview ───
@@ -215,6 +215,23 @@ class MainWindow(ctk.CTkFrame):
         self.chat_display._textbox.tag_config("sender_director", foreground="#AB47BC")
         self.chat_display._textbox.tag_config("sender_osint", foreground="#FF6D00")
         self.chat_display._textbox.tag_config("msg_body", foreground=COLORS["text_primary"])
+
+        # Selector de Modo Pre-Generación
+        mode_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        mode_frame.pack(fill="x", padx=6, pady=(4, 2))
+        
+        ctk.CTkLabel(mode_frame, text="Formato:", 
+                     font=("JetBrains Mono", 10, "bold"), 
+                     text_color=COLORS["text_dim"]).pack(side="left", padx=(4, 8))
+        
+        self.pre_mode_var = ctk.StringVar(value="DUAL AI")
+        self.pre_mode_selector = ctk.CTkSegmentedButton(
+            mode_frame, values=["DUAL AI", "SOLO TERM"], variable=self.pre_mode_var,
+            font=("JetBrains Mono", 10, "bold"), height=24,
+            fg_color=COLORS["bg_dark"], selected_color=COLORS["accent_cyan"],
+            selected_hover_color="#00b8d4"
+        )
+        self.pre_mode_selector.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         # Input
         input_frame = ctk.CTkFrame(panel, fg_color="transparent")
@@ -1367,6 +1384,15 @@ class MainWindow(ctk.CTkFrame):
             if self.ai.model:
                 self.ai.chat_session = self.ai.model.start_chat(history=[])
 
+            mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
+            solo_instruction = ""
+            if mode == "SOLO TERM":
+                solo_instruction = (
+                    "\n\n[MODO SOLO TERM ACTIVADO]\n"
+                    "OBLIGATORIO: Devuelve SOLO comandos de tipo 'ejecucion' para probar herramientas.\n"
+                    "NO incluyas 'menu' ni 'narracion' extensa. Los comandos irán directo a la Terminal B."
+                )
+
             # Inyectar el target legal seleccionado
             target = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
             enriched_prompt = (
@@ -1374,19 +1400,22 @@ class MainWindow(ctk.CTkFrame):
                 f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
                 f"Genera un guion sobre EXACTAMENTE este tema: {prompt}\n"
                 f"NO generes sobre nmap ni otro tema diferente al solicitado."
+                f"{solo_instruction}"
             )
             response = self.ai.chat(enriched_prompt)
             json_data = self.ai.extraer_json(response)
 
             if json_data:
                 self.after(0, self._stop_processing_animation)
-                target_editor = "Editor B" if self._active_mode == "solo" else "Editor A"
+                mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
+                target_editor = "Editor B" if mode == "SOLO TERM" else "Editor A"
+                
                 self.after(0, self.append_chat, "DOMINION",
-                           f"✅ Guion generado — {len(json_data)} escenas. Revisa {target_editor} →")
+                           f"✅ Guion ({mode}) generado — {len(json_data)} escenas. Revisa {target_editor} →")
                 json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
 
                 def inject_json():
-                    if self._active_mode == "solo":
+                    if mode == "SOLO TERM":
                         # Solo mode → JSON va a editor B
                         self.editor_b.delete("1.0", "end")
                         self.editor_b.insert("end", json_str)
@@ -1395,6 +1424,7 @@ class MainWindow(ctk.CTkFrame):
                         # Dual mode → JSON va a editor A
                         self.editor.delete("1.0", "end")
                         self.editor.insert("end", json_str)
+                        self._switch_editor_tab("a")
                         self._update_editor()
                     self._auto_save_project(json_data)
 
