@@ -1608,8 +1608,8 @@ class MainWindow(ctk.CTkFrame):
     # ═══════════════════════════════════════════════
 
     def _parse_editor_json(self):
-        active_tab = self.editor_tabs.get()
-        if active_tab == "Terminal B (Cmds)":
+        # El tab activo se guarda en self._active_tab ("a" o "b")
+        if getattr(self, "_active_tab", "a") == "b":
             json_str = self.editor_b.get("1.0", "end").strip()
             editor_name = "Terminal B"
         else:
