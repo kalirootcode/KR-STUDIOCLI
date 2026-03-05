@@ -1424,8 +1424,20 @@ class MainWindow(ctk.CTkFrame):
             # Inyectar el target legal seleccionado
             target = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
             
-            if existing_json:
-                # Si ya hay un JSON, instruimos a la IA a que lo modifique con la petición del usuario
+            # Detectar si el usuario pide modificar o quiere un tema nuevo
+            mod_keywords = ["modifica", "cambia", "agrega", "elimina", "quita", "pon", "ajusta", "corrige", "actualiza", "en la escena", "reemplaza"]
+            is_modification = any(k in prompt.lower() for k in mod_keywords)
+
+            # Si es un tema completamente nuevo, limpiar el directorio de audios viejos para evitar superposiciones
+            if not is_modification and mode == "SOLO TERM":
+                import shutil
+                audio_dir = os.path.join(self.workspace_dir, "audio_solo")
+                if os.path.exists(audio_dir):
+                    shutil.rmtree(audio_dir, ignore_errors=True)
+                os.makedirs(audio_dir, exist_ok=True)
+
+            if existing_json and is_modification:
+                # Si ya hay un JSON y el usuario expresamente pide modificarlo
                 enriched_prompt = (
                     f"El usuario solicita la siguiente modificación al guion actual: {prompt}\n\n"
                     f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
@@ -1436,7 +1448,7 @@ class MainWindow(ctk.CTkFrame):
                     f"{solo_instruction}"
                 )
             else:
-                # Generación desde cero
+                # Generación desde cero (tema nuevo)
                 enriched_prompt = (
                     f"TEMA SOLICITADO POR EL USUARIO: {prompt}\n\n"
                     f"[TARGET LEGAL OBLIGATORIO: {target}]\n\n"
@@ -1500,17 +1512,36 @@ class MainWindow(ctk.CTkFrame):
         audio_engine = AudioEngine()
         total = len(json_data)
         errores = 0
+        
+        mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
+        is_solo = (mode == "SOLO TERM")
+        if is_solo:
+            os.makedirs(os.path.join(self.workspace_dir, "audio_solo"), exist_ok=True)
+
+        import hashlib
+
         for idx, escena in enumerate(json_data):
             voz = escena.get("voz", "")
             if not voz:
                 continue
-            path = os.path.join(self.workspace_dir, f"audio_{idx}.mp3")
+                
+            text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
+            
+            if is_solo:
+                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{idx}_{text_hash}.mp3")
+            else:
+                path = os.path.join(self.workspace_dir, f"audio_{idx}_{text_hash}.mp3")
+                
+            if os.path.exists(path):
+                self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — Cache [OK]")
+                continue
+
             try:
                 dur = audio_engine.generar_audio(voz, path)
                 self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — {dur:.1f}s")
             except Exception as e:
                 errores += 1
-                self.after(0, self.append_chat, "Error", f"❌ Audio {idx+1}: {e}")
+                self.after(0, self.append_chat, "Error", f"❌ Info TTS {idx+1}: {e}")
 
         msg = "✅ Todos los audios listos." if errores == 0 else f"⚠ {errores} error(es)."
         self.after(0, self.append_chat, "Sistema", msg)

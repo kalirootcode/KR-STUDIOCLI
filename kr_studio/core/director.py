@@ -265,8 +265,12 @@ class DirectorEngine:
             # Timestamp tracking
             elapsed = time.monotonic() - self._start_wall
 
+            import hashlib
+            voz_text = escena.get("voz", "")
+            text_hash = hashlib.md5(voz_text.encode('utf-8')).hexdigest()[:8] if voz_text else "nohash"
+
             # Duración del audio
-            audio_path = os.path.join(self.workspace_dir, f"audio_{idx}.mp3")
+            audio_path = os.path.join(self.workspace_dir, f"audio_{idx}_{text_hash}.mp3")
             duracion = self.audio_engine.obtener_duracion(audio_path) if os.path.exists(audio_path) else 3.0
 
             if tipo == "narracion":

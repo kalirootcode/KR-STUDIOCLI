@@ -338,8 +338,11 @@ class SoloDirectorEngine:
 
         if tipo == "narracion":
             if voz:
-                # Reproducir audio generado previamente (o generarlo al vuelo si no existe)
-                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
+                # Generar un hash único basado en el texto para evitar que se reproduzcan audios viejos
+                import hashlib
+                text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
+                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}_{text_hash}.mp3")
+                
                 if not os.path.exists(path):
                     self._flog("Generando audio...", "info")
                     from kr_studio.core.audio_engine import AudioEngine
@@ -367,7 +370,10 @@ class SoloDirectorEngine:
             
             # 1. Reproducir la voz DESPUÉS de lanzar el comando, mientras corre
             if voz:
-                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}.mp3")
+                import hashlib
+                text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
+                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}_{text_hash}.mp3")
+                
                 if not os.path.exists(path):
                     from kr_studio.core.audio_engine import AudioEngine
                     AudioEngine().generar_audio(voz, path)
