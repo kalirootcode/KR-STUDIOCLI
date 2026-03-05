@@ -30,19 +30,29 @@ class AudioEngine:
             "--write-media", output_path
         ]
 
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"edge-tts falló: {result.stderr}")
-        except FileNotFoundError:
-            raise RuntimeError("edge-tts no está instalado. Ejecuta: pip install edge-tts")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("edge-tts tardó demasiado en responder.")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode == 0:
+                    return self.obtener_duracion(output_path)
+                else:
+                    last_err = result.stderr
+            except FileNotFoundError:
+                raise RuntimeError("edge-tts no está instalado. Ejecuta: pip install edge-tts")
+            except subprocess.TimeoutExpired:
+                last_err = "edge-tts tardó demasiado en responder."
+            
+            # Si falla, esperar antes de reintentar
+            import time
+            time.sleep(2.0)
+            
+        raise RuntimeError(f"edge-tts falló después de {max_retries} intentos. Último error: {last_err}")
 
         return self.obtener_duracion(output_path)
 
