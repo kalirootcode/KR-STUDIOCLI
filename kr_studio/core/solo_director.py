@@ -83,7 +83,7 @@ class SoloDirectorEngine:
         self.is_running = False
 
         self.wid_b = None  # SOLO Terminal B
-        self.typing_delay = 120
+        self.typing_delay = 80
         self.obs = OBSController()
         self.floating_ctrl = None
         self.ai_engine = None
@@ -127,7 +127,19 @@ class SoloDirectorEngine:
             pass
 
     def _type_text(self, wid: str, text: str, delay_ms: int = None):
-        delay = delay_ms or self.typing_delay
+        # Leer la variable de hilo seguro (%)
+        try:
+            speed_pct = int(self.app.typing_speed_pct) if hasattr(self.app, 'typing_speed_pct') else 100
+        except Exception:
+            speed_pct = 100
+            
+        # Fórmula más agresiva: 100% = 120ms. Menos % = mucho más delay.
+        if speed_pct < 100:
+            calculated_delay = int(120 + (100 - speed_pct) * 4)  # ej: 50% = 320ms
+        else:
+            calculated_delay = max(5, int(120 - (speed_pct - 100)))  # ej: 200% = 20ms
+        
+        delay = delay_ms if delay_ms is not None else calculated_delay
         self._focus_window(wid)
         try:
             subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', str(delay), text],
@@ -309,12 +321,12 @@ class SoloDirectorEngine:
                 
                 self._ejecutar_escena_json(escena, i)
             
-            self.tts.speak_and_wait("Secuencia completada. Revisar logs detallados.")
+            self._log("Director", "✅ Secuencia completada. Revisar logs detallados.")
             
         else:
             self._log("Error", "❌ El JSON de Terminal B está vacío o no se leyó correctamente. Ejecución abortada.")
             self._flog("JSON no detectado.", "error")
-            self.tts.speak_and_wait("Error crítico. No se ha provisto un guion válido para el modo Solo.")
+            self._log("Director", "❌ Error crítico. No se ha provisto un guion válido para el modo Solo.")
 
         # ── FIN ──
         if obs_ok:
@@ -338,21 +350,21 @@ class SoloDirectorEngine:
 
         if tipo == "narracion":
             if voz:
-                # --- NUEVO: Esperar confirmación antes de hablar ---
-                self._wait_continue("🔊 Reproducir narración...")
+                # --- NUEVO: Esperar confirmación antes de avanzar ---
+                self._wait_continue("🔊 Narración (Silencio)...")
                 if self.floating_ctrl:
-                    self.floating_ctrl.start_processing_animation("HABLANDO")
+                    self.floating_ctrl.start_processing_animation("NARRANDO")
 
-                # Generar un hash único basado en el texto para evitar que se reproduzcan audios viejos
-                import hashlib
-                text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
-                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}_{text_hash}.mp3")
+                # Se eliminó la generación en vivo y reproducción de TTS para el flujo de ensayo.
+                # Registrar timestamp para renderizado posterior
+                rel_time = time.monotonic() - self._start_wall
+                self.timestamps["narracion"] = self.timestamps.get("narracion", [])
+                self.timestamps["narracion"].append(round(rel_time, 2))
                 
-                if not os.path.exists(path):
-                    self._flog("Generando audio...", "info")
-                    from kr_studio.core.audio_engine import AudioEngine
-                    AudioEngine().generar_audio(voz, path)
-                self.tts.play_audio(path)
+                # Calcular pausa baseada en cantidad de palabras (aprox 2.5 palabras por segundo)
+                num_words = len(voz.split())
+                calculated_delay = max(1.5, num_words / 2.5)
+                time.sleep(calculated_delay)
                 
                 if self.floating_ctrl:
                     self.floating_ctrl.stop_processing_animation()
@@ -378,20 +390,12 @@ class SoloDirectorEngine:
             if self.floating_ctrl:
                 self.floating_ctrl.start_processing_animation("PROCESANDO")
 
-            self._type_text(self.wid_b, cmd_final)
+            self._type_text(self.wid_b, cmd_final, delay_ms=escena.get("typing_delay"))
             time.sleep(1.0)
             self._send_key(self.wid_b, "Return")
             
-            # 1. Reproducir la voz DESPUÉS de lanzar el comando, mientras corre
-            if voz:
-                import hashlib
-                text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
-                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{index}_{text_hash}.mp3")
-                
-                if not os.path.exists(path):
-                    from kr_studio.core.audio_engine import AudioEngine
-                    AudioEngine().generar_audio(voz, path)
-                self.tts.play_audio_bg(path)
+            # 1. Narración durante la ejecución eliminada para el ensayo.
+            # Los audios se sincronizarán y renderizarán en post-producción.
 
             # 2. Esperar a que el comando termine
             self._flog("  ⏳ Esperando output...", "wait")
@@ -417,7 +421,7 @@ class SoloDirectorEngine:
                 
                 # Explicar el error
                 if error_exp:
-                    self.tts.speak_and_wait(error_exp)
+                    self._flog(f"📝 {error_exp}", "info")
                 
                 # Ejecutar comando corregido
                 corrected = self._wrap_command(cmd_corregido)
@@ -433,7 +437,6 @@ class SoloDirectorEngine:
                 fix_resumen = fix_analysis.get("resumen_tts", "")
                 if fix_resumen:
                     self._log("AI Analysis", f"🛠 Fix: {fix_resumen}")
-                    self.tts.speak_and_wait(fix_resumen)
 
             if self.floating_ctrl:
                 self.floating_ctrl.stop_processing_animation()

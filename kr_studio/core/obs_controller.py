@@ -124,7 +124,7 @@ class OBSController:
 
     def setup_dual_scenes(self, wid_a: str, wid_b: str) -> dict:
         """
-        Configura OBS con 2 escenas para captura de terminales.
+        Configura OBS con escenas para captura de terminales.
         Crea las escenas si no existen y añade window capture sources.
         Retorna un dict con el resultado.
         """
@@ -137,8 +137,12 @@ class OBSController:
         existing = self._get_scene_names()
         result["scenes"] = existing
 
+        scenes_to_create = ["Terminal-B"]
+        if wid_a:
+            scenes_to_create.append("Terminal-A")
+
         # Crear escenas si no existen
-        for scene_name in ["Terminal-A", "Terminal-B"]:
+        for scene_name in scenes_to_create:
             if scene_name not in existing:
                 try:
                     self.ws.call(self._obs_requests.CreateScene(
@@ -150,10 +154,11 @@ class OBSController:
                     result["errors"].append(f"Error creando '{scene_name}': {e}")
 
         # Intentar agregar Window Capture a cada escena
-        captures = [
-            ("Terminal-A", "Captura-TermA", wid_a),
-            ("Terminal-B", "Captura-TermB", wid_b),
-        ]
+        captures = []
+        if wid_a:
+            captures.append(("Terminal-A", "Captura-TermA", wid_a))
+        if wid_b:
+            captures.append(("Terminal-B", "Captura-TermB", wid_b))
 
         for scene_name, source_name, wid in captures:
             try:
@@ -182,5 +187,8 @@ class OBSController:
                 logger.warning(msg)
                 result["errors"].append(msg)
 
-        result["ok"] = "Terminal-A" in result["scenes"] and "Terminal-B" in result["scenes"]
+        if wid_a:
+            result["ok"] = "Terminal-A" in result["scenes"] and "Terminal-B" in result["scenes"]
+        else:
+            result["ok"] = "Terminal-B" in result["scenes"]
         return result

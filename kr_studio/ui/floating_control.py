@@ -169,12 +169,32 @@ class FloatingControl(ctk.CTkToplevel):
 
     # ── Acciones ──
     def _on_launch(self):
-        self.main_window.launch_konsole()
+        """Lanza el director según el modo seleccionado en la UI principal."""
+        mode = self._get_current_mode()
+        if mode == "SOLO TERM":
+            self.main_window.launch_solo()
+        else:
+            self.main_window.launch_konsole()
         self._set_running()
 
     def _on_record(self):
-        self.main_window.launch_and_record()
+        """Graba según el modo seleccionado en la UI principal."""
+        mode = self._get_current_mode()
+        if mode == "SOLO TERM":
+            # En solo mode, lanzar solo y grabar manualmente con OBS
+            self.main_window.launch_solo()
+        else:
+            self.main_window.launch_and_record()
         self._set_running()
+
+    def _get_current_mode(self) -> str:
+        """Lee el modo actual desde la UI principal (DUAL AI / SOLO TERM)."""
+        try:
+            if hasattr(self.main_window, 'pre_mode_var') and self.main_window.pre_mode_var:
+                return self.main_window.pre_mode_var.get()
+        except Exception:
+            pass
+        return "DUAL AI"
 
     def _on_stop(self):
         self.main_window.stop_director()

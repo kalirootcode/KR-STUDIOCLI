@@ -1,178 +1,379 @@
 """
-video_engine.py — Ensamblaje y renderizado de video final (moviepy)
-Combina video crudo + audios TTS en sus tiempos exactos.
+video_engine.py — Ensamblaje y renderizado de video final (moviepy + ffmpeg)
+Combina clips de video/imagen/audio del timeline en un archivo MP4 final.
+
+Estrategia de renderizado (anti-hang):
+  1. Compositar video con moviepy → MP4 sin audio (rápido, sin deadlocks)
+  2. Compositar audio por separado → WAV
+  3. Muxear video + audio con ffmpeg subprocess (confiable, sin pipes colgados)
 """
 import os
-import logging
+import subprocess
+import threading
+import traceback
+import time as time_module
+import sys
+import re
 
-logger = logging.getLogger(__name__)
+class TqdmCapture:
+    """Captura el stderr de tqdm para extraer el porcentaje de progreso."""
+    def __init__(self, callback):
+        self.callback = callback
+        self.original_stderr = sys.stderr
+        self.buffer = ""
+        self.pct_regex = re.compile(r"(\d+)%\|")
 
+    def write(self, text):
+        self.buffer += text
+        if '\r' in text or '\n' in text:
+            lines = self.buffer.split('\r')
+            last_line = lines[-1] if lines[-1] else (lines[-2] if len(lines) > 1 else "")
+            match = self.pct_regex.search(last_line)
+            if match and self.callback:
+                pct = int(match.group(1))
+                # Escalar para que sea 15% -> 80% del proceso total
+                scaled_pct = 15 + (pct / 100.0) * 65
+                # Mandar None como msg para que la UI actualice la barra pero NO llene la consola de logs
+                self.callback(scaled_pct, None)
+            self.buffer = ""
+        self.original_stderr.write(text)
+
+    def flush(self):
+        self.original_stderr.flush()
+
+    def __enter__(self):
+        sys.stderr = self
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stderr = self.original_stderr
 
 class VideoEngine:
-    """Motor de renderizado de video con moviepy."""
+    """Motor de renderizado de video multipista con moviepy + ffmpeg."""
 
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
+        self.exports_dir = os.path.join(output_dir, "exports")
+        os.makedirs(self.exports_dir, exist_ok=True)
 
-    def render(
+    def render_timeline(
         self,
-        video_path: str,
-        timestamps: dict,
-        audio_dir: str,
+        clips_data: list,
+        total_duration: float,
         output_path: str = None,
-        bg_music_path: str = None,
-        bg_volume: float = 0.10
+        resolution: str = "1080p",
+        preset: str = "medium",
+        progress_callback=None
     ) -> str:
         """
-        Renderiza el video final sincronizando audios con timestamps.
-
-        Args:
-            video_path: Ruta al video crudo (.mp4)
-            timestamps: Dict con tiempos exactos {"scene_0_audio": 0.0, ...}
-            audio_dir: Directorio con archivos .mp3 generados
-            output_path: Ruta de salida (default: workspace/VIRAL_REEL_FINAL.mp4)
-            bg_music_path: Pista de fondo opcional
-            bg_volume: Volumen de fondo (0.0 - 1.0)
-
-        Returns:
-            Ruta al video final renderizado.
+        Renderiza el video final a partir de los clips del TimelineEngine.
+        Usa un pipeline de 2 pasos para evitar deadlocks de moviepy:
+          Paso 1: Generar video-only MP4
+          Paso 2: Generar audio WAV y muxear con ffmpeg
         """
         if output_path is None:
-            output_path = os.path.join(self.output_dir, "VIRAL_REEL_FINAL.mp4")
+            ts = time_module.strftime("%Y%m%d_%H%M%S")
+            output_path = os.path.join(self.exports_dir, f"VIRAL_REEL_{ts}.mp4")
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # Archivos temporales
+        video_only_path = output_path.replace('.mp4', '_VIDEO_ONLY.mp4')
+        audio_only_path = output_path.replace('.mp4', '_AUDIO_MIX.wav')
+
+        # Overshadow print locally to pipe all terminal logs to the UI console
+        import builtins
+        _orig_print = builtins.print
+        def print(*args, **kwargs):
+            msg = " ".join(str(a) for a in args)
+            _orig_print(*args, **kwargs)
+            if progress_callback:
+                progress_callback(None, msg)
+
+        print(f"\n{'='*60}")
+        print(f"🎬 EXPORT: Iniciando render multipista (2-pass)")
+        print(f"   Clips totales: {len(clips_data)}")
+        print(f"   Duración total: {total_duration:.1f}s")
+        print(f"   Resolución: {resolution}")
+        print(f"   Output: {output_path}")
+        print(f"{'='*60}\n")
+
+        open_clips = []
 
         try:
-            from moviepy import VideoFileClip, AudioFileClip, CompositeAudioClip
+            from moviepy import (
+                VideoFileClip, ImageClip, AudioFileClip,
+                CompositeVideoClip, CompositeAudioClip, ColorClip
+            )
 
-            logger.info(f"🎬 Cargando video: {video_path}")
-            video = VideoFileClip(video_path)
-            video_duration = video.duration
-            logger.info(f"   Duración: {video_duration:.1f}s")
+            if progress_callback:
+                progress_callback(2, "Preparando recursos...")
 
-            # ── Recopilar audios y posicionarlos ──
-            audio_clips = []
+            # ── Resolución ──
+            target_w, target_h = 1080, 1920  # Default: 9:16 vertical para Reels
+            bitrate = "8000k"
 
-            # Buscar archivos de audio TTS
-            audio_files = sorted([
-                f for f in os.listdir(audio_dir)
-                if f.endswith('.mp3')
-            ])
+            if "1920x1080" in resolution or "16:9" in resolution:
+                target_w, target_h = 1920, 1080
+            elif "1080x1920" in resolution or "9:16" in resolution:
+                target_w, target_h = 1080, 1920
+            elif "4K" in resolution:
+                target_w, target_h = 3840, 2160
+                bitrate = "25000k"
+            elif "720p" in resolution:
+                target_w, target_h = 1280, 720
+                bitrate = "5000k"
 
-            logger.info(f"   Audios encontrados: {len(audio_files)}")
+            target_res = (target_w, target_h)
 
-            # Mapear timestamps de audio a clips
-            audio_timestamps = sorted([
-                (k, v) for k, v in timestamps.items()
-                if "audio" in k.lower() or "tts" in k.lower() or "narr" in k.lower()
-            ], key=lambda x: x[1])
+            # Fondo negro base
+            base = ColorClip(size=target_res, color=(0, 0, 0), duration=total_duration)
+            video_layers = [base]
+            audio_layers = []
 
-            for idx, audio_file in enumerate(audio_files):
-                audio_path_full = os.path.join(audio_dir, audio_file)
+            # Separar por tipo/pista
+            v_clips = [c for c in clips_data if c.track.startswith("V")]
+            a_clips = [c for c in clips_data if c.track.startswith("A")]
 
-                # Determinar timestamp de inicio
-                if idx < len(audio_timestamps):
-                    start_time = audio_timestamps[idx][1]
-                else:
-                    # Si no hay timestamp, distribuir equitativamente
-                    start_time = (idx / max(len(audio_files), 1)) * video_duration
+            v_tracks_order = {"V1": 0, "V2": 1, "V3": 2}
+            v_clips.sort(key=lambda x: (v_tracks_order.get(x.track, 0), x.start))
 
-                # Asegurar que no exceda la duración del video
-                if start_time >= video_duration:
+            print(f"  📹 Video clips: {len(v_clips)}")
+            print(f"  🔊 Audio clips: {len(a_clips)}")
+            print(f"  📐 Resolución: {target_w}x{target_h}")
+
+            if progress_callback:
+                progress_callback(5, f"Compositing {len(v_clips)} clips de video...")
+
+            # ══════════════════════════════════════
+            # PASO 1: Procesar clips de video
+            # ══════════════════════════════════════
+            for idx, tc in enumerate(v_clips):
+                is_image = tc.source_path.lower().endswith(
+                    ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'))
+                clip_dur = tc.end - tc.start
+
+                print(f"  [{idx+1}/{len(v_clips)}] {tc.track}: {tc.label}")
+                print(f"      Start: {tc.start:.1f}s → {tc.end:.1f}s (dur: {clip_dur:.1f}s)")
+
+                if not os.path.exists(tc.source_path):
+                    print(f"      ⚠ ARCHIVO NO ENCONTRADO")
                     continue
 
                 try:
-                    clip = AudioFileClip(audio_path_full)
-                    clip = clip.with_start(start_time)
+                    if is_image:
+                        c = ImageClip(tc.source_path).with_duration(clip_dur)
+                    else:
+                        full_clip = VideoFileClip(tc.source_path)
+                        open_clips.append(full_clip)
 
-                    # Recortar si excede el video
-                    max_dur = video_duration - start_time
-                    if clip.duration > max_dur:
-                        clip = clip.subclipped(0, max_dur)
+                        real_dur = full_clip.duration
+                        src_start = min(tc.source_start, max(0, real_dur - 0.1))
+                        src_end = min(src_start + clip_dur, real_dur)
+                        c = full_clip.subclipped(src_start, src_end)
 
-                    audio_clips.append(clip)
-                    logger.info(f"   🔊 {audio_file} → {start_time:.1f}s")
+                        # Extraer audio nativo del video
+                        if not tc.muted and c.audio is not None:
+                            a_clip = c.audio.with_start(tc.start)
+                            audio_layers.append(a_clip)
+
+                    # Redimensionar con fit (cover/center crop para aspect ratio diferente)
+                    c = self._resize_clip(c, target_res)
+                    c = c.with_start(tc.start).with_position("center")
+                    video_layers.append(c)
+                    print(f"      ✅ OK")
+
                 except Exception as e:
-                    logger.warning(f"   Error cargando {audio_file}: {e}")
+                    print(f"      ❌ Error: {e}")
+                    traceback.print_exc()
 
-            # ── Música de fondo (opcional) ──
-            if bg_music_path and os.path.exists(bg_music_path):
+            # ══════════════════════════════════════
+            # PASO 2: Procesar clips de audio (A1/A2)
+            # ══════════════════════════════════════
+            for idx, tc in enumerate(a_clips):
+                if tc.muted:
+                    continue
+                if not os.path.exists(tc.source_path):
+                    continue
+
                 try:
-                    bg = AudioFileClip(bg_music_path)
-                    # Loop si es más corta que el video
-                    if bg.duration < video_duration:
-                        loops = int(video_duration / bg.duration) + 1
-                        bg = bg.loop(n=loops)
-                    bg = bg.subclipped(0, video_duration)
-                    bg = bg.with_volume_scaled(bg_volume)
-                    audio_clips.insert(0, bg)
-                    logger.info(f"   🎵 Fondo musical al {int(bg_volume*100)}%")
+                    c = AudioFileClip(tc.source_path)
+                    open_clips.append(c)
+
+                    clip_dur = tc.end - tc.start
+                    real_dur = c.duration
+                    src_start = min(tc.source_start, max(0, real_dur - 0.1))
+                    src_end = min(src_start + clip_dur, real_dur)
+
+                    c = c.subclipped(src_start, src_end)
+                    c = c.with_start(tc.start)
+
+                    if tc.track == "A2":
+                        c = c.with_volume_scaled(0.15)
+
+                    audio_layers.append(c)
+                    print(f"  🔊 {tc.track}: {tc.label} ({clip_dur:.1f}s)")
                 except Exception as e:
-                    logger.warning(f"   Error con música de fondo: {e}")
+                    print(f"  ❌ Audio error: {e}")
 
-            # ── Componer audio final ──
-            if audio_clips:
-                final_audio = CompositeAudioClip(audio_clips)
-                video = video.with_audio(final_audio)
-                logger.info(f"   🎚️ {len(audio_clips)} pistas de audio compuestas")
+            if len(video_layers) <= 1:
+                print("  ⚠ No hay clips de video válidos")
+                if progress_callback:
+                    progress_callback(0, "Error: No hay clips válidos")
+                return ""
+
+            # ══════════════════════════════════════
+            # PASO 3: Escribir VIDEO sin audio (rápido, sin deadlocks)
+            # ══════════════════════════════════════
+            if progress_callback:
+                progress_callback(15, "Generando pista de video...")
+
+            ffmpeg_preset = "ultrafast"
+            if "slow" in preset.lower():
+                ffmpeg_preset = "slow"
+            elif "medium" in preset.lower():
+                ffmpeg_preset = "medium"
+
+            final_video = CompositeVideoClip(video_layers, size=target_res)
+            final_video = final_video.with_duration(total_duration)
+
+            print(f"\n  🎞️ Escribiendo video-only → {video_only_path}")
+            print(f"     Preset: {ffmpeg_preset} | Bitrate: {bitrate} | FPS: 30")
+
+            # Monitorear progreso capturando stderr
+            if progress_callback:
+                progress_callback(15, "Iniciando renderización de frames (x264)...")
+
+            with TqdmCapture(progress_callback) if progress_callback else open(os.devnull, 'w'):
+                final_video.write_videofile(
+                    video_only_path,
+                    codec="libx264",
+                    bitrate=bitrate,
+                    fps=30,
+                    preset=ffmpeg_preset,
+                    threads=os.cpu_count() or 4,
+                    audio=False,     # ← SIN AUDIO (evita deadlocks)
+                    logger="bar",    # ← Imprime barra tqdm, TqdmCapture la intercepta
+                )
+
+            print(f"  ✅ Video escrito")
+            final_video.close()
+
+            # ══════════════════════════════════════
+            # PASO 4: Escribir AUDIO por separado (si hay pistas de audio)
+            # ══════════════════════════════════════
+            has_audio = bool(audio_layers)
+
+            if has_audio:
+                if progress_callback:
+                    progress_callback(80, "Generando pista de audio...")
+
+                print(f"  🔊 Escribiendo audio ({len(audio_layers)} pistas) → {audio_only_path}")
+
+                final_audio = CompositeAudioClip(audio_layers)
+                final_audio = final_audio.with_duration(total_duration)
+                final_audio.write_audiofile(audio_only_path, fps=44100, logger=None)
+                final_audio.close()
+                print(f"  ✅ Audio escrito")
+
+            # ══════════════════════════════════════
+            # PASO 5: Muxear con FFMPEG (confiable, sin cuelgues)
+            # ══════════════════════════════════════
+            if progress_callback:
+                progress_callback(90, "Muxeando video + audio...")
+
+            if has_audio:
+                print(f"  🔗 Muxeando → {output_path}")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", video_only_path,
+                    "-i", audio_only_path,
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
+                    output_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0:
+                    print(f"  ⚠ ffmpeg stderr: {result.stderr[:500]}")
+                    # Fallback: usar el video sin audio
+                    os.rename(video_only_path, output_path)
+                    print(f"  ⚠ Usando video sin audio como fallback")
             else:
-                logger.warning("   ⚠ Sin audios — exportando video sin narración")
+                # Sin audio, solo renombrar
+                os.rename(video_only_path, output_path)
 
-            # ── Exportar ──
-            logger.info(f"🎞️ Renderizando → {output_path}")
-            video.write_videofile(
-                output_path,
-                codec="libx264",
-                audio_codec="aac",
-                fps=30,
-                preset="medium",
-                threads=4,
-                logger=None  # Silenciar tqdm de moviepy
-            )
+            # ── Limpieza de temporales ──
+            for tmp in [video_only_path, audio_only_path]:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
 
-            # Cerrar clips
-            video.close()
-            for c in audio_clips:
+            for c in open_clips:
                 try:
                     c.close()
                 except Exception:
                     pass
 
-            file_size = os.path.getsize(output_path) / (1024 * 1024)
-            logger.info(f"✅ Video final: {output_path} ({file_size:.1f} MB)")
-            return output_path
+            # ── Resultado ──
+            if progress_callback:
+                progress_callback(100, "¡Renderizado Completo!")
 
-        except ImportError as e:
-            logger.error(f"Dependencia faltante: {e}. pip install moviepy")
-            return ""
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path) / (1024 * 1024)
+                print(f"\n  ✅ VIDEO EXPORTADO: {output_path} ({file_size:.1f} MB)")
+                return output_path
+            else:
+                print(f"\n  ❌ No se creó el archivo de salida")
+                return ""
+
         except Exception as e:
-            logger.error(f"Error renderizando: {e}")
+            print(f"\n  ❌ ERROR FATAL: {e}")
+            traceback.print_exc()
+            if progress_callback:
+                progress_callback(0, f"Error: {e}")
             return ""
 
-    def get_timestamps_from_json(self, json_data: list) -> dict:
-        """
-        Genera timestamps estimados a partir de un JSON de escenas.
-        Útil cuando no hay timestamps reales del director.
-        """
-        timestamps = {}
-        current_time = 0.0
+        finally:
+            for c in open_clips:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+            # Limpieza de temporales en caso de error
+            for tmp in [video_only_path, audio_only_path]:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
 
-        for idx, scene in enumerate(json_data):
-            tipo = scene.get("tipo", "")
+    def _resize_clip(self, clip, target_res):
+        """Redimensiona un clip al tamaño target, centrando si el aspect ratio difiere."""
+        tw, th = target_res
+        cw, ch = clip.w, clip.h
 
-            if tipo == "narracion":
-                timestamps[f"scene_{idx}_narration"] = current_time
-                current_time += 5.0  # Estimación
+        if (cw, ch) == (tw, th):
+            return clip
 
-            elif tipo == "ejecucion":
-                timestamps[f"scene_{idx}_command"] = current_time
-                current_time += scene.get("espera", 4.0) + 2.0
+        # Escalar para cubrir (cover fit) y luego recortar al centro
+        scale_w = tw / cw
+        scale_h = th / ch
+        scale = max(scale_w, scale_h)
 
-            elif tipo == "pausa":
-                timestamps[f"scene_{idx}_pause"] = current_time
-                current_time += scene.get("espera", 3.0)
+        new_w = int(cw * scale)
+        new_h = int(ch * scale)
 
-            elif tipo == "menu":
-                timestamps[f"scene_{idx}_menu"] = current_time
-                current_time += scene.get("espera", 2.0)
+        clip = clip.resized(new_size=(new_w, new_h))
 
-        return timestamps
+        # Recortar al centro si sobra
+        if new_w > tw or new_h > th:
+            x_center = new_w // 2
+            y_center = new_h // 2
+            x1 = x_center - tw // 2
+            y1 = y_center - th // 2
+            clip = clip.cropped(x1=x1, y1=y1, width=tw, height=th)
+
+        return clip

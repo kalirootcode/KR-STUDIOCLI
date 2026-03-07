@@ -27,7 +27,7 @@ class DirectorEngine:
         self.wid_a = None  # Terminal A (kr-clidn)
         self.wid_b = None  # Terminal B (ejecución)
 
-        self.typing_delay = 120  # ms entre teclas
+        self.typing_delay = 80  # ms entre teclas
         self.obs = OBSController()
         self.floating_ctrl = None  # Widget flotante
 
@@ -93,7 +93,19 @@ class DirectorEngine:
             self._log("Error", f"windowactivate falló: {e}")
 
     def _type_text(self, wid: str, text: str, delay_ms: int = None):
-        delay = delay_ms or self.typing_delay
+        # Leer la variable de hilo seguro (%)
+        try:
+            speed_pct = int(self.app.typing_speed_pct) if hasattr(self.app, 'typing_speed_pct') else 100
+        except Exception:
+            speed_pct = 100
+            
+        # Fórmula más agresiva: 100% = 120ms. Menos % = mucho más delay.
+        if speed_pct < 100:
+            calculated_delay = int(120 + (100 - speed_pct) * 4)  # ej: 50% = 320ms
+        else:
+            calculated_delay = max(5, int(120 - (speed_pct - 100)))  # ej: 200% = 20ms
+        
+        delay = delay_ms if delay_ms is not None else calculated_delay
         self._focus_window(wid)
         try:
             subprocess.run(
@@ -271,7 +283,12 @@ class DirectorEngine:
 
             # Duración del audio
             audio_path = os.path.join(self.workspace_dir, f"audio_{idx}_{text_hash}.mp3")
-            duracion = self.audio_engine.obtener_duracion(audio_path) if os.path.exists(audio_path) else 3.0
+            if os.path.exists(audio_path):
+                duracion = self.audio_engine.obtener_duracion(audio_path)
+            else:
+                # Fallback: Calcular pausa baseada en cantidad de palabras (aprox 2.5 palabras por segundo)
+                num_words = len(voz_text.split())
+                duracion = max(1.5, num_words / 2.5)
 
             if tipo == "narracion":
                 self.timestamps[f"scene_{idx}_audio"] = elapsed
@@ -287,7 +304,7 @@ class DirectorEngine:
                     self.obs.switch_scene("Terminal-B")
                 comando_real = escena.get("comando_real", "")
                 if comando_real:
-                    self._type_text(self.wid_b, comando_real)
+                    self._type_text(self.wid_b, comando_real, delay_ms=escena.get("typing_delay"))
                     time.sleep(max(0.5, duracion))
                     self._send_key(self.wid_b, "Return")
                     time.sleep(1.5)
@@ -301,13 +318,13 @@ class DirectorEngine:
                 texto = escena.get("texto", "")
                 espera = escena.get("espera", 2.0)
                 if tecla:
-                    self._type_text(self.wid_a, tecla, delay_ms=150)
+                    self._type_text(self.wid_a, tecla, delay_ms=escena.get("typing_delay", 150))
                     time.sleep(0.3)
                     self._send_key(self.wid_a, "Return")
                     time.sleep(espera)
                     self._flog(f"  Menú: tecla '{tecla}'", "info")
                 elif texto:
-                    self._type_text(self.wid_a, texto)
+                    self._type_text(self.wid_a, texto, delay_ms=escena.get("typing_delay"))
                     time.sleep(max(0.5, duracion))
                     self._send_key(self.wid_a, "Return")
                     time.sleep(espera)

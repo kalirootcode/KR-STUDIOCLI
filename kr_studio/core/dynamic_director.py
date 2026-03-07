@@ -468,13 +468,15 @@ class DynamicDirectorEngine:
                             analysis = self._analyze_cmd_output(comando, cmd_output)
                             resumen = analysis.get("resumen_tts", "")
                             if resumen:
-                                self.tts.speak_and_wait(resumen)
+                                self._flog(f"📝 {resumen}", "info")
+                                num_words = len(resumen.split())
+                                time.sleep(max(1.5, num_words / 2.5))
 
                             # Si hay error → corregir automáticamente
                             if analysis.get("tiene_error") and analysis.get("comando_corregido"):
                                 error_exp = analysis.get("explicacion_error", "")
                                 if error_exp:
-                                    self.tts.speak_and_wait(error_exp)
+                                    self._flog(f"📝 {error_exp}", "info")
                                 corrected = analysis["comando_corregido"]
                                 self._flog(f"  🔧 {corrected[:40]}", "ok")
                                 self._focus_window(self.wid_b)
@@ -484,7 +486,7 @@ class DynamicDirectorEngine:
                                 fix_out = self._wait_for_command_done(LOG_TERMINAL_B)
                                 fix_a = self._analyze_cmd_output(corrected, fix_out)
                                 if fix_a.get("resumen_tts"):
-                                    self.tts.speak_and_wait(fix_a["resumen_tts"])
+                                    self._flog(f"📝 {fix_a['resumen_tts']}", "info")
                                 executed_list.append(corrected)
 
                             self._wait_continue(f"Cmd {ci+1} listo")

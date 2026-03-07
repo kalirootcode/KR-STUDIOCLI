@@ -8,8 +8,8 @@ from mutagen.mp3 import MP3
 
 
 class AudioEngine:
-    # Voz en español latinoamericano masculina por defecto
-    DEFAULT_VOICE = "es-MX-JorgeNeural"
+    # Voz en español latinoamericano masculina por defecto (Voz más humana)
+    DEFAULT_VOICE = "es-CO-GonzaloNeural"
 
     def __init__(self, voice: str = None):
         self.voice = voice or self.DEFAULT_VOICE
