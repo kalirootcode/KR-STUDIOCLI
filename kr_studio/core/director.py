@@ -11,6 +11,7 @@ import threading
 import subprocess
 import time
 import os
+import hashlib
 from kr_studio.core.audio_engine import AudioEngine
 from kr_studio.core.obs_controller import OBSController
 
@@ -30,6 +31,9 @@ class DirectorEngine:
         self.typing_delay = 80  # ms entre teclas
         self.obs = OBSController()
         self.floating_ctrl = None  # Widget flotante
+
+        from kr_studio.core.x11_controller import X11Controller
+        self.x11 = X11Controller()
 
         # Almacén de respuestas leídas del terminal
         self.last_terminal_read = ""
@@ -51,79 +55,20 @@ class DirectorEngine:
     # ─────────────────────────────────────────────
 
     def _find_all_konsole_wids(self) -> list:
-        for search_type, term in [('--class', 'konsole'), ('--name', 'Konsole')]:
-            try:
-                result = subprocess.run(
-                    ['xdotool', 'search', search_type, term],
-                    capture_output=True, text=True, timeout=5
-                )
-                wids = [w.strip() for w in result.stdout.strip().split('\n') if w.strip()]
-                if wids:
-                    return wids
-            except Exception:
-                pass
-        return []
+        return self.x11.find_konsole_wids()
 
     def _resize_window(self, wid: str, width=450, height=800):
-        try:
-            hex_wid = hex(int(wid))
-            result = subprocess.run(
-                ['wmctrl', '-i', '-r', hex_wid, '-e', f'0,-1,-1,{width},{height}'],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode != 0:
-                raise RuntimeError("wmctrl falló")
-        except (FileNotFoundError, RuntimeError, ValueError):
-            try:
-                subprocess.run(
-                    ['xdotool', 'windowsize', wid, str(width), str(height)],
-                    capture_output=True, timeout=5
-                )
-            except Exception:
-                pass
+        self.x11.resize_window(wid, width, height)
 
     def _focus_window(self, wid: str):
-        try:
-            subprocess.run(
-                ['xdotool', 'windowactivate', '--sync', wid],
-                capture_output=True, timeout=5
-            )
-            time.sleep(0.3)
-        except Exception as e:
-            self._log("Error", f"windowactivate falló: {e}")
+        self.x11.focus_window(wid)
 
     def _type_text(self, wid: str, text: str, delay_ms: int = None):
-        # Leer la variable de hilo seguro (%)
-        try:
-            speed_pct = int(self.app.typing_speed_pct) if hasattr(self.app, 'typing_speed_pct') else 100
-        except Exception:
-            speed_pct = 100
-            
-        # Fórmula más agresiva: 100% = 120ms. Menos % = mucho más delay.
-        if speed_pct < 100:
-            calculated_delay = int(120 + (100 - speed_pct) * 4)  # ej: 50% = 320ms
-        else:
-            calculated_delay = max(5, int(120 - (speed_pct - 100)))  # ej: 200% = 20ms
-        
-        delay = delay_ms if delay_ms is not None else calculated_delay
-        self._focus_window(wid)
-        try:
-            subprocess.run(
-                ['xdotool', 'type', '--clearmodifiers', '--delay', str(delay), text],
-                capture_output=True, text=True, timeout=120
-            )
-        except Exception as e:
-            self._log("Error", f"xdotool type falló: {e}")
+        speed = getattr(self.app, 'typing_speed_pct', 80) if hasattr(self, 'app') else 80
+        self.x11.type_text(wid, text, speed, delay_ms)
 
     def _send_key(self, wid: str, key: str):
-        self._focus_window(wid)
-        try:
-            subprocess.run(
-                ['xdotool', 'key', '--clearmodifiers', key],
-                capture_output=True, text=True, timeout=5
-            )
-        except Exception as e:
-            self._log("Error", f"xdotool key falló: {e}")
+        self.x11.send_key(wid, key)
 
     def _log(self, sender: str, message: str):
         try:
@@ -156,41 +101,53 @@ class DirectorEngine:
     # ─────────────────────────────────────────────
 
     def _boot_krcli_terminal_a(self):
-        self._log("Director", "🚀 Iniciando KR-CLIDN en Terminal A...")
-        self._flog("Boot: script + venv + kr-clidn", "info")
-
+        self._log("Director", "🚀 Verificando Terminal A...")
+        self._flog("Verificando estado Terminal A...", "info")
+        
+        # Leer el log actual para ver si kr-clidn ya está activo
+        from kr_studio.core.dynamic_director import read_log_file, LOG_TERMINAL_A
+        current_log = read_log_file(LOG_TERMINAL_A, 20)
+        
+        # Si el dashboard ya está visible (detectar por texto del menú)
+        keywords_dashboard = ["CONSOLA AI", "WEB H4CK3R", "HERRAMIENTAS", "DOMINION"]
+        already_running = any(kw in current_log for kw in keywords_dashboard)
+        
+        if already_running:
+            self._log("Director", "✅ KR-CLIDN ya está activo")
+            self._flog("KR-CLIDN ya activo ✅", "ok")
+            return
+        
+        # Si no está corriendo, hacer el boot completo
         self._focus_window(self.wid_a)
-
-        # 1. Iniciar script para logging (subshell, NO -c)
-        self._type_text(self.wid_a, "script -q -f /tmp/kr_terminal_a.log", delay_ms=30)
+        self._type_text(self.wid_a, f"script -q -f {LOG_TERMINAL_A}", delay_ms=30)
         self._send_key(self.wid_a, "Return")
         time.sleep(0.8)
-
-        # 2. Limpiar
         self._type_text(self.wid_a, "clear", delay_ms=30)
         self._send_key(self.wid_a, "Return")
         time.sleep(0.3)
-
-        # 3. Activar venv
         self._type_text(self.wid_a, "source venv/bin/activate", delay_ms=30)
         self._send_key(self.wid_a, "Return")
         time.sleep(1.0)
-
-        # 4. Lanzar kr-clidn como comando normal
         self._type_text(self.wid_a, "kr-clidn", delay_ms=80)
         self._send_key(self.wid_a, "Return")
-
-        self._log("Director", "⏳ Esperando splash de KR-CLIDN...")
-        self._flog("Esperando splash screen...", "wait")
-        time.sleep(5.0)
-
-        # Esperar confirmación del usuario
-        self._log("Director", "⏸ Presiona CONTINUAR cuando el dashboard esté listo.")
+        
+        # Esperar hasta 15s a que aparezca el dashboard
+        self._flog("Esperando dashboard (auto-detect)...", "wait")
+        max_wait = 30  # 15s total (30 x 0.5s)
+        for attempt in range(max_wait):
+            if not self.is_running:
+                return
+            time.sleep(0.5)
+            log_content = read_log_file(LOG_TERMINAL_A, 30)
+            if any(kw in log_content for kw in keywords_dashboard):
+                self._log("Director", "✅ KR-CLIDN Dashboard detectado automáticamente")
+                self._flog("Dashboard detectado ✅", "ok")
+                return
+        
+        # Si no se detectó, pedir confirmación manual
+        self._log("Director", "⏸ No se detectó dashboard. Confirma manualmente.")
         if self.floating_ctrl:
-            self.floating_ctrl.wait_for_continue("Dashboard KR-CLIDN cargando...")
-
-        self._log("Director", "✅ KR-CLIDN Dashboard listo")
-        self._flog("KR-CLIDN Dashboard ✅", "ok")
+            self.floating_ctrl.wait_for_continue("Confirma: ¿Dashboard KR-CLIDN visible?")
 
     # ─────────────────────────────────────────────
     # SECUENCIA PRINCIPAL (DUAL TERMINAL + OBS)
@@ -260,13 +217,27 @@ class DirectorEngine:
 
         # ── PASO 6: Ejecutar escenas del guion ──
         total = len(self.json_data)
-        for idx, escena in enumerate(self.json_data):
-            if not self.is_running:
-                self._log("Director", "⏹ Secuencia detenida.")
-                break
+        
+        i = 0
+        while i < total and self.is_running:
+            escena = self.json_data[i]
+            
+            if self.floating_ctrl:
+                self.floating_ctrl.set_scene_info(i + 1, total)
+                
+            # Verificar salto pendiente
+            jump_to = self.floating_ctrl.consume_jump() if self.floating_ctrl else -1
+            if jump_to >= 0:
+                i = jump_to
+                continue
+                
+            # Verificar skip
+            if self.floating_ctrl and self.floating_ctrl.consume_skip():
+                i += 1
+                continue
 
             tipo = escena.get("tipo", "")
-            step_num = idx + 1
+            step_num = i + 1
             self._log("Director", f"▶ Escena {step_num}/{total} — {tipo.upper()}")
 
             # Progreso en widget flotante
@@ -277,21 +248,35 @@ class DirectorEngine:
             # Timestamp tracking
             elapsed = time.monotonic() - self._start_wall
 
-            import hashlib
             voz_text = escena.get("voz", "")
             text_hash = hashlib.md5(voz_text.encode('utf-8')).hexdigest()[:8] if voz_text else "nohash"
 
             # Duración del audio
-            audio_path = os.path.join(self.workspace_dir, f"audio_{idx}_{text_hash}.mp3")
+            # Utilizar WorkspaceManager si está disponible y hay sesión activa
+            try:
+                wm = getattr(self.app, 'workspace_manager', None)
+                session = wm.get_active_session() if wm else None
+            except:
+                session = None
+
+            if session:
+                audio_path = os.path.join(session["audio_dir"], f"audio_{i}_{text_hash}.wav")
+            else:
+                audio_path = os.path.join(self.workspace_dir, f"audio_{i}_{text_hash}.wav")
+
+            if not os.path.exists(audio_path) and voz_text:
+                try:
+                    self.audio_engine.generar_audio(voz_text, audio_path)
+                except Exception:
+                    pass
             if os.path.exists(audio_path):
                 duracion = self.audio_engine.obtener_duracion(audio_path)
             else:
-                # Fallback: Calcular pausa baseada en cantidad de palabras (aprox 2.5 palabras por segundo)
-                num_words = len(voz_text.split())
-                duracion = max(1.5, num_words / 2.5)
+                # Fallback solo si falló la generación
+                duracion = max(1.5, len(voz_text.split()) / 2.5)
 
             if tipo == "narracion":
-                self.timestamps[f"scene_{idx}_audio"] = elapsed
+                self.timestamps[f"scene_{i}_audio"] = elapsed
                 # Solo espera la duración del audio (kr-clidn activo en Terminal A)
                 if obs_ok:
                     self.obs.switch_scene("Terminal-A")
@@ -299,7 +284,7 @@ class DirectorEngine:
                 self._flog(f"  Voz: {escena.get('voz', '')[:40]}", "info")
 
             elif tipo == "ejecucion":
-                self.timestamps[f"scene_{idx}_command"] = elapsed
+                self.timestamps[f"scene_{i}_command"] = elapsed
                 if obs_ok:
                     self.obs.switch_scene("Terminal-B")
                 comando_real = escena.get("comando_real", "")
@@ -311,24 +296,52 @@ class DirectorEngine:
                 self._flog(f"  Ejecutado: {comando_real[:40]}", "ok")
 
             elif tipo == "menu":
-                self.timestamps[f"scene_{idx}_menu"] = elapsed
+                self.timestamps[f"scene_{i}_menu"] = elapsed
                 if obs_ok:
                     self.obs.switch_scene("Terminal-A")
                 tecla = escena.get("tecla", "")
                 texto = escena.get("texto", "")
-                espera = escena.get("espera", 2.0)
+                espera = float(escena.get("espera", 2.0))
+                self.floating_ctrl.add_log(f"Esperando selección menú...", "wait")
+                
                 if tecla:
-                    self._type_text(self.wid_a, tecla, delay_ms=escena.get("typing_delay", 150))
+                    self._focus_window(self.wid_a)
+                    self._type_text(self.wid_a, tecla, delay_ms=150)
                     time.sleep(0.3)
                     self._send_key(self.wid_a, "Return")
-                    time.sleep(espera)
-                    self._flog(f"  Menú: tecla '{tecla}'", "info")
+                    time.sleep(max(espera, 1.5))
+                    
+                    # Verificar que la tecla tuvo efecto leyendo el log
+                    from kr_studio.core.dynamic_director import read_log_file, LOG_TERMINAL_A
+                    log_after = read_log_file(LOG_TERMINAL_A, 15)
+                    
+                    # Si presionamos "1" y esperamos ver "Consola AI" en el log
+                    expected_map = {
+                        "1": ["Consola AI", "CONSOLA", "Chat"],
+                        "N": ["Nuevo", "Chat", "Nombre"],
+                        "n": ["Nuevo", "Chat", "Nombre"],
+                    }
+                    expected = expected_map.get(tecla, [])
+                    if expected and not any(e in log_after for e in expected):
+                        self._flog(f"⚠ Tecla '{tecla}' posiblemente no tuvo efecto", "wait")
+                        # Reintentar una vez
+                        time.sleep(1.0)
+                        self._type_text(self.wid_a, tecla, delay_ms=150)
+                        self._send_key(self.wid_a, "Return")
+                        time.sleep(espera)
+                    
+                    self._flog(f"Menú: tecla '{tecla}' enviada", "info")
+                
                 elif texto:
-                    self._type_text(self.wid_a, texto, delay_ms=escena.get("typing_delay"))
+                    self._focus_window(self.wid_a)
+                    # Limpiar línea actual antes de escribir (por si hay texto residual)
+                    self._send_key(self.wid_a, "ctrl+u")
+                    time.sleep(0.2)
+                    self._type_text(self.wid_a, texto, delay_ms=escena.get("typing_delay", 80))
                     time.sleep(max(0.5, duracion))
                     self._send_key(self.wid_a, "Return")
                     time.sleep(espera)
-                    self._flog(f"  Texto: {texto[:35]}", "info")
+                    self._flog(f"Texto enviado: {texto[:35]}", "info")
 
             elif tipo == "enter":
                 terminal = escena.get("terminal", "A")
@@ -363,18 +376,29 @@ class DirectorEngine:
                 self._flog(f"  Leído: {len(lines)} líneas de Terminal {terminal}", "ok")
 
             elif tipo == "esperar":
-                if self.floating_ctrl:
-                    self.floating_ctrl.wait_for_continue(f"Escena {step_num}: Esperando...")
-                else:
-                    time.sleep(escena.get("espera", 5.0))
+                espera = float(escena.get("duracion", 2.0))
+                time.sleep(espera)
+                self._flog(f"  Pausa: {espera}s", "wait")
 
             else:
                 self._log("Director", f"⚠ Tipo desconocido: {tipo}")
                 time.sleep(1.0)
 
-            # ═══ PAUSA ENTRE CADA PASO ═══
             if self.is_running and self.floating_ctrl and tipo != "esperar":
-                self.floating_ctrl.wait_for_continue(f"Paso {step_num}/{total} listo")
+                if tipo == "narracion":
+                    self.floating_ctrl.wait_for_continue(
+                        f"Narración {step_num}",
+                        duration_seconds=duracion + 0.3
+                    )
+                else:
+                    self.floating_ctrl.wait_for_continue(f"Paso {step_num}/{total} listo")
+                    
+            # Verificar retry
+            if self.floating_ctrl and self.floating_ctrl.consume_retry():
+                self.floating_ctrl.add_log(f"↺ Reintentando escena {i+1}", "wait")
+                continue
+                
+            i += 1
 
         # ── PASO 7: Finalizar ──
         if obs_ok:

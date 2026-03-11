@@ -59,6 +59,9 @@ class MainWindow(ctk.CTkFrame):
         self._anim_id = None
         self._floating_ctrl = None
 
+        from kr_studio.core.series_orchestrator import SeriesOrchestrator
+        self.series_orchestrator = SeriesOrchestrator(self.ai, self.workspace_dir)
+
         self.video_duration_min = 5
         self.use_wrapper_var = None  # Se crea en _build_editor_panel
         self.timestamps = {}
@@ -86,7 +89,8 @@ class MainWindow(ctk.CTkFrame):
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
 
         self.tab1 = self.tabview.add("🎬 Guion y Director")
-        self.tab2 = self.tabview.add("🎞️ Post-Producción")
+        self.tab2 = self.tabview.add("🎬 Orquestador de Series")
+        self.tab3 = self.tabview.add("🎙 Estudio TTS")
 
         # Tab 1 layout
         self.tab1.grid_columnconfigure(0, weight=1)
@@ -100,6 +104,12 @@ class MainWindow(ctk.CTkFrame):
 
         # Tab 2 layout
         self._build_postprod_tab()
+
+        # Tab 3 — Estudio TTS
+        self.tab3.grid_rowconfigure(1, weight=1)
+        self.tab3.grid_columnconfigure(0, weight=1)
+        self.tab3.grid_columnconfigure(1, weight=2)
+        self._build_tts_studio()
 
         # ─── POSICIONAR VENTANA ───
         self.master_app.update_idletasks()
@@ -637,1142 +647,840 @@ class MainWindow(ctk.CTkFrame):
     # TAB 2: POST-PRODUCCIÓN — EDITOR PROFESIONAL
     # ═══════════════════════════════════════════════
 
-    def _build_postprod_tab(self):
-        """Pestaña 2: Editor de Video Profesional con Previsualizador y Timeline Interactivo."""
-        from kr_studio.core.timeline_engine import TimelineEngine
-        self.tl_engine = TimelineEngine(self.workspace_dir)
-        self._selected_clip_id = None
-        self._playhead_pos = 0.0
-        self._tl_zoom = 1.0
-        self._dragging_playhead = False
-        self._dragging_clip_id = None       # Clip que se está arrastrando
-        self._drag_offset_x = 0.0           # Offset del click dentro del clip
-        self._preview_playing = False
-        self._vlc_current_video_path = None # Para compatibilidad con drag-drop
-        self._media_pool_items = []         # Lista de rutas importadas al Media Pool
-        self._fullscreen_win = None
-        self._video_muted = False          # Mute del audio del video
-        self._previewer = None              # Se inicializa después de crear los widgets
 
-        self.tab2.grid_rowconfigure(0, weight=3)   # Top: Media + Preview + Settings
-        self.tab2.grid_rowconfigure(1, weight=0)   # Toolbar
-        self.tab2.grid_rowconfigure(2, weight=2)   # Timeline
-        self.tab2.grid_columnconfigure(0, weight=1)
+    # ═══════════════════════════════════════════════════════════════════════
+    #  TAB 3 — ESTUDIO TTS PROFESIONAL
+    # ═══════════════════════════════════════════════════════════════════════
 
-        # ════════════════════════════════════════════
-        # ZONA SUPERIOR: Media Pool | Previsualizador | Export Settings
-        # ════════════════════════════════════════════
-        top_frame = ctk.CTkFrame(self.tab2, fg_color="transparent")
-        top_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 2))
-        top_frame.grid_rowconfigure(0, weight=1)
-        top_frame.grid_columnconfigure(0, weight=1)  # Media Pool
-        top_frame.grid_columnconfigure(1, weight=2)  # Previsualizador (más ancho)
-        top_frame.grid_columnconfigure(2, weight=1)  # Export Settings
+    def _build_tts_studio(self):
+        """
+        Estudio TTS completo con:
+        - Panel izquierdo: biblioteca de audios generados (por proyecto/capítulo)
+        - Panel derecho: editor de voz con controles pro (voz, rate, pitch, volumen)
+        - Generación individual y por lotes desde JSON
+        - Preview, reproducción, descarga y gestión de archivos
+        """
+        # ── Header ──
+        header = ctk.CTkFrame(self.tab3, fg_color=COLORS["header_bg"], height=48, corner_radius=0)
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
+        ctk.CTkLabel(header, text="🎙  ESTUDIO TTS PROFESIONAL",
+                     font=("JetBrains Mono", 14, "bold"),
+                     text_color=COLORS["accent_cyan"]).pack(side="left", padx=14, pady=10)
+        ctk.CTkLabel(header, text="edge-tts  •  48kHz/16bit  •  PCM WAV",
+                     font=("JetBrains Mono", 10),
+                     text_color="#555577").pack(side="right", padx=14)
 
-        # ── 1. MEDIA POOL (con Drag & Drop al Timeline) ──
-        media_frame = ctk.CTkFrame(top_frame, fg_color=COLORS["bg_panel"],
-                                   corner_radius=10, border_width=1, border_color=COLORS["border"])
-        media_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
+        # ════════════════════════════════════════
+        # PANEL IZQUIERDO — Biblioteca de audios
+        # ════════════════════════════════════════
+        lib_frame = ctk.CTkFrame(self.tab3, fg_color=COLORS["bg_panel"],
+                                  corner_radius=10, border_width=1,
+                                  border_color=COLORS["border"])
+        lib_frame.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(8, 8))
+        lib_frame.grid_rowconfigure(2, weight=1)
+        lib_frame.grid_columnconfigure(0, weight=1)
 
-        mh = ctk.CTkFrame(media_frame, fg_color=COLORS["header_bg"], height=30, corner_radius=0)
-        mh.pack(fill="x"); mh.pack_propagate(False)
-        ctk.CTkLabel(mh, text="📂 MEDIA POOL", font=("JetBrains Mono", 10, "bold"),
-                     text_color=COLORS["accent_cyan"]).pack(side="left", padx=8)
+        lh = ctk.CTkFrame(lib_frame, fg_color=COLORS["header_bg"], height=36, corner_radius=0)
+        lh.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(lh, text="📂 BIBLIOTECA DE AUDIOS",
+                     font=("JetBrains Mono", 11, "bold"),
+                     text_color=COLORS["accent_yellow"]).pack(side="left", padx=10, pady=6)
 
-        # Botones pequeños en la cabecera
-        tb = {"width": 60, "height": 22, "font": ("JetBrains Mono", 8), "corner_radius": 4}
-        ctk.CTkButton(mh, text="+ Import", fg_color="#27ae60", hover_color="#2ecc71",
-                      command=self._import_media, **tb).pack(side="right", padx=(2, 6))
-        ctk.CTkButton(mh, text="💾 Save", fg_color="#2980b9", hover_color="#3498db",
-                      command=self._save_project, **tb).pack(side="right", padx=2)
-        ctk.CTkButton(mh, text="📂 Load", fg_color="#8e44ad", hover_color="#9b59b6",
-                      command=self._load_project, **tb).pack(side="right", padx=2)
+        # Filtro / búsqueda
+        filt = ctk.CTkFrame(lib_frame, fg_color="transparent")
+        filt.grid(row=1, column=0, sticky="ew", padx=6, pady=(6, 2))
+        filt.grid_columnconfigure(0, weight=1)
+        self._tts_filter_var = ctk.StringVar()
+        self._tts_filter_var.trace_add("write", self._tts_filter_library)
+        ctk.CTkEntry(filt, textvariable=self._tts_filter_var,
+                     placeholder_text="🔍 Filtrar audios...",
+                     font=("JetBrains Mono", 10), fg_color="#111122",
+                     border_color=COLORS["border"], height=28
+                     ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ctk.CTkButton(filt, text="↺",
+                      command=self._tts_refresh_library,
+                      fg_color="#1a1b2e", hover_color="#252640",
+                      width=30, height=28,
+                      font=("JetBrains Mono", 12)).grid(row=0, column=1)
 
-        # Instrucciones
-        ctk.CTkLabel(media_frame, text="Arrastra un archivo al Timeline ↓",
-                     font=("JetBrains Mono", 8), text_color="#4a4b5e").pack(padx=6, pady=(4, 0))
+        # Lista scrollable
+        self._tts_lib_scroll = ctk.CTkScrollableFrame(lib_frame, fg_color="transparent")
+        self._tts_lib_scroll.grid(row=2, column=0, sticky="nsew", padx=4, pady=4)
+        self._tts_lib_items = []  # [{path, nombre, dur, frame}]
 
-        # Listbox nativo (soporta drag)
-        self.media_listbox = tk.Listbox(media_frame, bg="#07080e", fg="#8a8b9e",
-                                         selectbackground="#1a3a5c", selectforeground="#00D9FF",
-                                         font=("JetBrains Mono", 9), borderwidth=0,
-                                         highlightthickness=0, activestyle="none")
-        self.media_listbox.pack(fill="both", expand=True, padx=6, pady=(2, 6))
-        self.media_listbox.bind("<ButtonPress-1>", self._media_drag_start)
-        self.media_listbox.bind("<B1-Motion>", self._media_drag_motion)
-        self.media_listbox.bind("<ButtonRelease-1>", self._media_drag_drop)
+        # Botones biblioteca
+        lib_btns = ctk.CTkFrame(lib_frame, fg_color="transparent")
+        lib_btns.grid(row=3, column=0, sticky="ew", padx=6, pady=(0, 6))
+        ctk.CTkButton(lib_btns, text="📂 Abrir carpeta",
+                      command=self._tts_open_folder,
+                      fg_color="#1a1b2e", hover_color="#252640",
+                      font=("JetBrains Mono", 10), height=28
+                      ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkButton(lib_btns, text="🗑 Limpiar todo",
+                      command=self._tts_clear_all,
+                      fg_color="#3a1010", hover_color="#5a1818",
+                      font=("JetBrains Mono", 10), height=28
+                      ).pack(side="left", fill="x", expand=True)
 
-        # ── 2. PREVISUALIZADOR ──
-        preview_frame = ctk.CTkFrame(top_frame, fg_color=COLORS["bg_panel"],
-                                     corner_radius=10, border_width=1, border_color=COLORS["border"])
-        preview_frame.grid(row=0, column=1, sticky="nsew", padx=3)
+        # ════════════════════════════════════════
+        # PANEL DERECHO — Editor y controles pro
+        # ════════════════════════════════════════
+        edit_frame = ctk.CTkFrame(self.tab3, fg_color=COLORS["bg_panel"],
+                                   corner_radius=10, border_width=1,
+                                   border_color=COLORS["border"])
+        edit_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=(8, 8))
+        edit_frame.grid_rowconfigure(3, weight=1)
+        edit_frame.grid_columnconfigure(0, weight=1)
 
-        ph = ctk.CTkFrame(preview_frame, fg_color=COLORS["header_bg"], height=30, corner_radius=0)
-        ph.pack(fill="x"); ph.pack_propagate(False)
-        ctk.CTkLabel(ph, text="🖥️ PREVISUALIZADOR", font=("JetBrains Mono", 10, "bold"),
-                     text_color=COLORS["accent_cyan"]).pack(side="left", padx=8)
-        # Botón pantalla completa
-        ctk.CTkButton(ph, text="⛶", width=28, height=22, font=("JetBrains Mono", 14),
-                      fg_color="transparent", hover_color="#2a2b3e",
-                      command=self._toggle_fullscreen).pack(side="right", padx=2)
-        self.preview_timecode = ctk.CTkLabel(ph, text="00:00:00.000", font=("JetBrains Mono", 10),
-                                              text_color=COLORS["accent_green"])
-        self.preview_timecode.pack(side="right", padx=8)
+        eh = ctk.CTkFrame(edit_frame, fg_color=COLORS["header_bg"], height=36, corner_radius=0)
+        eh.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(eh, text="✏️  EDITOR DE VOZ",
+                     font=("JetBrains Mono", 11, "bold"),
+                     text_color="#AAAAAA").pack(side="left", padx=10, pady=6)
 
-        # Canvas/Frame de preview — VLC se embebe aquí
-        self.preview_video_frame = tk.Frame(preview_frame, bg="#000000")
-        self.preview_video_frame.pack(fill="both", expand=True, padx=6, pady=(6, 2))
-        # Placeholder text (se borra al cargar video)
-        self._preview_placeholder = tk.Label(self.preview_video_frame, text="Importa un video para reproducir",
-                                              bg="#000000", fg="#4a4b5e", font=("JetBrains Mono", 11))
-        self._preview_placeholder.place(relx=0.5, rely=0.5, anchor="center")
+        # ── Controles pro ──
+        ctrl = ctk.CTkFrame(edit_frame, fg_color="#0d0e1a", corner_radius=6)
+        ctrl.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 4))
+        ctrl.grid_columnconfigure((1, 3, 5, 7), weight=1)
 
-        # Controles de reproducción
-        ctrl_bar = ctk.CTkFrame(preview_frame, fg_color="transparent", height=38)
-        ctrl_bar.pack(fill="x", padx=6, pady=(0, 4))
-        ctrl_bar.pack_propagate(False)
+        from kr_studio.core.audio_engine import AudioEngine as _AE
 
-        btn_style = {"width": 34, "height": 30, "font": ("JetBrains Mono", 15),
-                     "fg_color": "#1a1b2e", "hover_color": "#2a2b3e", "corner_radius": 6}
-        ctk.CTkButton(ctrl_bar, text="⏮", command=self._preview_goto_start, **btn_style).pack(side="left", padx=2)
-        self.btn_play = ctk.CTkButton(ctrl_bar, text="▶", command=self._preview_play_pause, **btn_style)
-        self.btn_play.pack(side="left", padx=2)
-        ctk.CTkButton(ctrl_bar, text="⏹", command=self._preview_stop, **btn_style).pack(side="left", padx=2)
-        ctk.CTkButton(ctrl_bar, text="⏭", command=self._preview_goto_end, **btn_style).pack(side="left", padx=2)
+        # Nombre archivo
+        ctk.CTkLabel(ctrl, text="Nombre:", font=("JetBrains Mono", 10),
+                     text_color="#AAAAAA").grid(row=0, column=0, padx=(8, 4), pady=6, sticky="w")
+        self._tts_name_var = ctk.StringVar(value="voz_01")
+        ctk.CTkEntry(ctrl, textvariable=self._tts_name_var,
+                     font=("JetBrains Mono", 10), fg_color="#111122",
+                     border_color=COLORS["border"], height=28, width=120
+                     ).grid(row=0, column=1, padx=(0, 12), pady=6, sticky="ew")
 
-        # Volume slider
-        self._vlc_volume = tk.IntVar(value=80)
-        vol_lbl = ctk.CTkLabel(ctrl_bar, text="🔊", font=("JetBrains Mono", 12))
-        vol_lbl.pack(side="right", padx=(0, 2))
-        self.vol_slider = ctk.CTkSlider(ctrl_bar, from_=0, to=100, number_of_steps=100,
-                                         command=self._on_volume, width=60, height=12,
-                                         button_color="#2ecc71", progress_color="#2ecc71")
-        self.vol_slider.pack(side="right", padx=(4, 0))
-        self.vol_slider.set(80)
+        # Voz
+        ctk.CTkLabel(ctrl, text="Voz:", font=("JetBrains Mono", 10),
+                     text_color="#AAAAAA").grid(row=0, column=2, padx=(0, 4), pady=6)
+        self._tts_voice_var = ctk.StringVar(value=list(_AE.VOICE_OPTIONS.keys())[0])
+        ctk.CTkOptionMenu(ctrl, variable=self._tts_voice_var,
+                          values=list(_AE.VOICE_OPTIONS.keys()),
+                          fg_color="#1a1b2e", button_color=COLORS["accent_cyan"],
+                          font=("JetBrains Mono", 10), width=160
+                          ).grid(row=0, column=3, padx=(0, 12), pady=6, sticky="ew")
 
-        # Botón Mute Video Audio
-        self.btn_mute_video = ctk.CTkButton(ctrl_bar, text="📹🔊", width=40, height=28,
-                                             font=("JetBrains Mono", 11),
-                                             fg_color="#1a1b2e", hover_color="#2a2b3e",
-                                             corner_radius=6, command=self._toggle_video_mute)
-        self.btn_mute_video.pack(side="right", padx=(4, 0))
+        # Rate
+        ctk.CTkLabel(ctrl, text="Rate:", font=("JetBrains Mono", 10),
+                     text_color="#AAAAAA").grid(row=1, column=0, padx=(8, 4), pady=6)
+        self._tts_rate_var = ctk.StringVar(value="+0%")
+        ctk.CTkOptionMenu(ctrl, variable=self._tts_rate_var,
+                          values=["-20%", "-15%", "-10%", "-5%", "+0%",
+                                  "+5%", "+10%", "+15%", "+20%", "+30%"],
+                          fg_color="#1a1b2e", button_color="#FF8F00",
+                          font=("JetBrains Mono", 10), width=90
+                          ).grid(row=1, column=1, padx=(0, 12), pady=6, sticky="w")
 
-        # Slider scrubbing (progreso del video)
-        self.preview_slider = ctk.CTkSlider(ctrl_bar, from_=0, to=1000, number_of_steps=1000,
-                                             command=self._on_scrub, height=14,
-                                             button_color=COLORS["accent_cyan"],
-                                             progress_color=COLORS["accent_cyan"])
-        self.preview_slider.pack(side="left", fill="x", expand=True, padx=(8, 8))
-        self.preview_slider.set(0)
+        # Pitch
+        ctk.CTkLabel(ctrl, text="Pitch:", font=("JetBrains Mono", 10),
+                     text_color="#AAAAAA").grid(row=1, column=2, padx=(0, 4), pady=6)
+        self._tts_pitch_var = ctk.StringVar(value="+0Hz")
+        ctk.CTkOptionMenu(ctrl, variable=self._tts_pitch_var,
+                          values=["-15Hz", "-10Hz", "-5Hz", "+0Hz",
+                                  "+5Hz", "+10Hz", "+15Hz", "+20Hz"],
+                          fg_color="#1a1b2e", button_color="#E040FB",
+                          font=("JetBrains Mono", 10), width=90
+                          ).grid(row=1, column=3, padx=(0, 12), pady=6, sticky="w")
 
-        # ── Inicializar el Previsualizer (Motor VLC desacoplado) ──
-        from kr_studio.ui.previsualizer import Previsualizer
-        self._previewer = Previsualizer(
-            tl_engine=self.tl_engine,
-            video_frame=self.preview_video_frame,
-            root=self,
-            callbacks={
-                "on_timecode": lambda text: self.preview_timecode.configure(text=text),
-                "on_slider": lambda val: self.preview_slider.set(val),
-                "on_playhead": lambda pos: self._sync_playhead(pos),
-                "on_play_state": lambda playing: self.btn_play.configure(text="⏸" if playing else "▶"),
-                "on_draw_timeline": lambda: self._draw_timeline(),
-                "on_chat": lambda role, msg: self.append_chat(role, msg),
-            }
-        )
+        # Volumen
+        ctk.CTkLabel(ctrl, text="Vol:", font=("JetBrains Mono", 10),
+                     text_color="#AAAAAA").grid(row=1, column=4, padx=(0, 4), pady=6)
+        self._tts_vol_var = ctk.StringVar(value="+0%")
+        ctk.CTkOptionMenu(ctrl, variable=self._tts_vol_var,
+                          values=["-20%", "-10%", "+0%", "+10%", "+20%", "+50%"],
+                          fg_color="#1a1b2e", button_color="#00897B",
+                          font=("JetBrains Mono", 10), width=90
+                          ).grid(row=1, column=5, padx=(0, 12), pady=6, sticky="w")
 
-        # ── 3. EXPORT SETTINGS ──
-        export_frame = ctk.CTkFrame(top_frame, fg_color=COLORS["bg_panel"],
-                                    corner_radius=10, border_width=1, border_color=COLORS["border"])
-        export_frame.grid(row=0, column=2, sticky="nsew", padx=(3, 0))
+        # Modo batch desde JSON activo
+        self._tts_batch_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(ctrl, text="Batch desde JSON activo",
+                        variable=self._tts_batch_var,
+                        font=("JetBrains Mono", 10),
+                        text_color="#AAAAAA",
+                        fg_color=COLORS["accent_cyan"],
+                        hover_color="#00ACC1"
+                        ).grid(row=1, column=6, columnspan=2, padx=8, pady=6, sticky="w")
 
-        eh = ctk.CTkFrame(export_frame, fg_color=COLORS["header_bg"], height=30, corner_radius=0)
-        eh.pack(fill="x"); eh.pack_propagate(False)
-        ctk.CTkLabel(eh, text="⚙️ EXPORTAR", font=("JetBrains Mono", 10, "bold"),
-                     text_color=COLORS["accent_green"]).pack(side="left", padx=8)
+        # ── Área de texto ──
+        txt_header = ctk.CTkFrame(edit_frame, fg_color="transparent")
+        txt_header.grid(row=2, column=0, sticky="ew", padx=8, pady=(4, 0))
+        ctk.CTkLabel(txt_header, text="Texto a narrar:",
+                     font=("JetBrains Mono", 10), text_color="#AAAAAA").pack(side="left")
+        self._tts_char_label = ctk.CTkLabel(txt_header, text="0 chars",
+                                             font=("JetBrains Mono", 9),
+                                             text_color="#555577")
+        self._tts_char_label.pack(side="right")
 
-        si = ctk.CTkFrame(export_frame, fg_color="transparent")
-        si.pack(fill="both", expand=True, padx=10, pady=8)
+        self._tts_textbox = ctk.CTkTextbox(edit_frame,
+                                            font=("JetBrains Mono", 12),
+                                            fg_color="#080810",
+                                            border_color=COLORS["border"],
+                                            border_width=1, wrap="word")
+        self._tts_textbox.grid(row=3, column=0, sticky="nsew", padx=8, pady=(4, 4))
+        self._tts_textbox.bind("<KeyRelease>", self._tts_update_charcount)
+        PLACEHOLDER = "Escribe el texto que quieres convertir a voz profesional..."
+        self._tts_textbox.insert("end", PLACEHOLDER)
+        self._tts_textbox.bind("<FocusIn>", lambda e: self._tts_clear_placeholder(PLACEHOLDER))
 
-        for lbl_text, attr_name, values in [
-            ("Resolución:", "res_combo", ["9:16 Vertical (1080x1920)", "1080p (1920x1080)", "4K (3840x2160)", "720p (1280x720)"]),
-            ("Preset:", "quality_combo", ["fast", "medium", "slow (Máxima)"]),
-            ("Audio:", "audio_mix_combo", ["Auto-Sync (JSON)", "Solo Video"]),
-        ]:
-            r = ctk.CTkFrame(si, fg_color="transparent")
-            r.pack(fill="x", pady=(0, 5))
-            ctk.CTkLabel(r, text=lbl_text, font=("JetBrains Mono", 10)).pack(side="left")
-            combo = ctk.CTkComboBox(r, values=values, width=130, font=("JetBrains Mono", 9))
-            combo.pack(side="right")
-            setattr(self, attr_name, combo)
+        # ── Barra de progreso y estado ──
+        prog_frame = ctk.CTkFrame(edit_frame, fg_color="transparent")
+        prog_frame.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 4))
+        prog_frame.grid_columnconfigure(0, weight=1)
 
-        self.btn_manual_render = ctk.CTkButton(si, text="🎞️ Exportar MP4", command=self._manual_render,
-                                                fg_color="#1565c0", hover_color="#0d47a1", height=30,
-                                                font=("JetBrains Mono", 10, "bold"))
-        self.btn_manual_render.pack(fill="x", pady=(8, 4))
+        self._tts_progress = ctk.CTkProgressBar(prog_frame,
+                                                  fg_color="#111122",
+                                                  progress_color=COLORS["accent_cyan"],
+                                                  height=8)
+        self._tts_progress.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._tts_progress.set(0)
 
-        self.post_mode_var = ctk.StringVar(value="SOLO TERM")
-        self.btn_auto_render = ctk.CTkButton(si, text="🤖 Auto-Grabar", command=self._auto_record_and_render,
-                                              fg_color="#e65100", hover_color="#bf360c", height=30,
-                                              font=("JetBrains Mono", 10, "bold"))
-        self.btn_auto_render.pack(fill="x", pady=(0, 4))
+        self._tts_status = ctk.CTkLabel(prog_frame, text="Listo.",
+                                         font=("JetBrains Mono", 10),
+                                         text_color="#555577", anchor="w", width=200)
+        self._tts_status.grid(row=0, column=1, sticky="w")
 
-        self.render_status = ctk.CTkLabel(si, text="Lista.", font=("JetBrains Mono", 9),
-                                          text_color=COLORS["text_dim"])
-        self.render_status.pack()
+        # ── Botones de acción ──
+        act_row = ctk.CTkFrame(edit_frame, fg_color="transparent")
+        act_row.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 8))
 
-        # ════════════════════════════════════════════
-        # BARRA DE HERRAMIENTAS DE EDICIÓN (Toolbar)
-        # ════════════════════════════════════════════
-        toolbar = ctk.CTkFrame(self.tab2, fg_color=COLORS["header_bg"], height=36, corner_radius=0)
-        toolbar.grid(row=1, column=0, sticky="ew", padx=6, pady=2)
-        toolbar.pack_propagate(False)
+        self._tts_btn_gen = ctk.CTkButton(act_row,
+                          text="🔊 Generar TTS",
+                          command=self._tts_generate,
+                          fg_color=COLORS["accent_cyan"], hover_color="#00ACC1",
+                          text_color="#000000",
+                          font=("JetBrains Mono", 12, "bold"), height=38)
+        self._tts_btn_gen.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-        tb = {"width": 100, "height": 26, "font": ("JetBrains Mono", 10), "corner_radius": 6}
-        ctk.CTkButton(toolbar, text="✂ Cortar", command=self._tool_cut,
-                      fg_color="#c0392b", hover_color="#e74c3c", **tb).pack(side="left", padx=4, pady=4)
-        ctk.CTkButton(toolbar, text="🗑 Eliminar", command=self._tool_delete,
-                      fg_color="#7f8c8d", hover_color="#95a5a6", **tb).pack(side="left", padx=4, pady=4)
-        ctk.CTkButton(toolbar, text="🔇 Silenciar", command=self._tool_mute,
-                      fg_color="#8e44ad", hover_color="#9b59b6", **tb).pack(side="left", padx=4, pady=4)
-        ctk.CTkButton(toolbar, text="↩ Deshacer", command=self._tool_undo,
-                      fg_color="#2c3e50", hover_color="#34495e", **tb).pack(side="left", padx=4, pady=4)
+        ctk.CTkButton(act_row, text="🎧 Preview",
+                      command=self._tts_preview,
+                      fg_color="#1a2a1a", hover_color="#2a4a2a",
+                      font=("JetBrains Mono", 11), height=38
+                      ).pack(side="left", padx=(0, 6))
 
-        self.selected_clip_lbl = ctk.CTkLabel(toolbar, text="Sin selección",
-                                               font=("JetBrains Mono", 9), text_color=COLORS["text_dim"])
-        self.selected_clip_lbl.pack(side="right", padx=12)
+        ctk.CTkButton(act_row, text="⏹ Stop",
+                      command=self._tts_stop_playback,
+                      fg_color="#3a1010", hover_color="#5a1818",
+                      font=("JetBrains Mono", 11), height=38
+                      ).pack(side="left", padx=(0, 6))
 
-        # ════════════════════════════════════════════
-        # TIMELINE MULTICANAL INTERACTIVO
-        # ════════════════════════════════════════════
-        tl_frame = ctk.CTkFrame(self.tab2, fg_color=COLORS["bg_panel"],
-                                corner_radius=10, border_width=1, border_color=COLORS["border"])
-        tl_frame.grid(row=2, column=0, sticky="nsew", padx=6, pady=(2, 6))
+        ctk.CTkButton(act_row, text="🔄 Batch JSON",
+                      command=self._tts_batch_from_json,
+                      fg_color="#1a1b2e", hover_color="#252640",
+                      border_width=1, border_color=COLORS["accent_cyan"],
+                      font=("JetBrains Mono", 11), height=38
+                      ).pack(side="left")
 
-        tlh = ctk.CTkFrame(tl_frame, fg_color=COLORS["header_bg"], height=30, corner_radius=0)
-        tlh.pack(fill="x"); tlh.pack_propagate(False)
-        ctk.CTkLabel(tlh, text="🎬 TIMELINE", font=("JetBrains Mono", 10, "bold"),
-                     text_color=COLORS["accent_yellow"]).pack(side="left", padx=8)
-        self.timeline_duration_lbl = ctk.CTkLabel(tlh, text="⏱ 00:00.0s",
-                                                   font=("JetBrains Mono", 10), text_color=COLORS["text_dim"])
-        self.timeline_duration_lbl.pack(side="right", padx=8)
+        # Estado interno
+        self._tts_last_path = None
+        self._tts_current_proc = None
+        self._tts_lib_all = []   # todos los items sin filtro
 
-        # Zoom slider
-        ctk.CTkLabel(tlh, text="🔍", font=("JetBrains Mono", 10)).pack(side="right")
-        self.zoom_slider = ctk.CTkSlider(tlh, from_=0.5, to=5.0, number_of_steps=45,
-                                          command=self._on_zoom, width=80, height=12,
-                                          button_color="#f1c40f", progress_color="#f1c40f")
-        self.zoom_slider.pack(side="right", padx=4)
-        self.zoom_slider.set(1.0)
+        # Cargar biblioteca al arrancar
+        self.after(500, self._tts_refresh_library)
 
-        # Canvas Principal del Timeline
-        self.timeline_canvas = tk.Canvas(tl_frame, bg="#0a0b12", highlightthickness=0)
-        self.timeline_canvas.pack(fill="both", expand=True, padx=6, pady=(4, 2))
+    # ─── HELPERS TTS STUDIO ────────────────────────────────────────────────
 
-        # Scrollbar horizontal
-        self.tl_scrollbar = tk.Scrollbar(tl_frame, orient="horizontal", command=self.timeline_canvas.xview)
-        self.tl_scrollbar.pack(fill="x", padx=6, pady=(0, 2))
-        self.timeline_canvas.configure(xscrollcommand=self.tl_scrollbar.set)
+    @staticmethod
+    def _voz_pronunciable(voz) -> str:
+        """Limpia texto: quita emojis, controles, espacios. Retorna '' si no pronunciable."""
+        import unicodedata, re as _re
+        if not isinstance(voz, str):
+            return ""
+        voz = unicodedata.normalize("NFC", voz)
+        voz = _re.sub(
+            r"[\U0001F300-\U0001F9FF\U00010000-\U0010FFFF"
+            r"\u2600-\u27BF\u200B-\u200F\uFE00-\uFE0F]+",
+            " ", voz, flags=_re.UNICODE)
+        voz = _re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", " ", voz)
+        voz = _re.sub(r" {2,}", " ", voz).strip()
+        return voz if sum(1 for ch in voz if ch.isalpha()) >= 2 else ""
 
-        # Leyenda
-        leg = ctk.CTkFrame(tl_frame, fg_color="transparent", height=22)
-        leg.pack(fill="x", padx=6, pady=(0, 4))
-        for txt, clr in [("[V1] Video", "#2ecc71"), ("[A1] Voz TTS", "#3498db"),
-                          ("[A2] Música", "#9b59b6"), ("▶ Playhead", "#e74c3c")]:
-            ctk.CTkLabel(leg, text=txt, font=("JetBrains Mono", 8), text_color=clr).pack(side="left", padx=6)
+    def _tts_clear_placeholder(self, placeholder: str):
+        current = self._tts_textbox.get("1.0", "end").strip()
+        if current == placeholder:
+            self._tts_textbox.delete("1.0", "end")
 
-        # Bindings para interactividad del timeline
-        self.timeline_canvas.bind("<Button-1>", self._tl_on_click)
-        self.timeline_canvas.bind("<B1-Motion>", self._tl_on_drag)
-        self.timeline_canvas.bind("<ButtonRelease-1>", self._tl_on_release)
-        self.timeline_canvas.bind("<Double-Button-1>", self._tl_on_double_click)
+    def _tts_update_charcount(self, event=None):
+        n = len(self._tts_textbox.get("1.0", "end").strip())
+        self._tts_char_label.configure(text=f"{n} chars")
 
-    # ─── Constantes del Timeline ───
-    _TL_PADDING_X = 90
-    _TL_RULER_H = 18
-    _TL_TRACKS = [
-        {"id": "V3", "name": "📹 V3 Top",  "color": "#1abc9c", "y_offset": 0, "height": 28},
-        {"id": "V2", "name": "📹 V2 Mid",  "color": "#2ecc71", "y_offset": 1, "height": 28},
-        {"id": "V1", "name": "📹 V1 Base", "color": "#27ae60", "y_offset": 2, "height": 28},
-        {"id": "A1", "name": "🔊 TTS  ",  "color": "#3498db", "y_offset": 3, "height": 28},
-        {"id": "A2", "name": "🎵 Fondo",   "color": "#9b59b6", "y_offset": 4, "height": 28},
-    ]
-    _IMAGE_DURATION = 5.0  # Duración por defecto para imágenes en la pista de video
+    def _tts_get_engine(self):
+        """Crea AudioEngine con los parámetros actuales del estudio."""
+        from kr_studio.core.audio_engine import AudioEngine as _AE
+        voice_key = self._tts_voice_var.get()
+        voice_id  = _AE.VOICE_OPTIONS.get(voice_key, _AE.DEFAULT_VOICE)
+        engine    = _AE(voice=voice_id)
+        engine._studio_rate  = self._tts_rate_var.get()
+        engine._studio_pitch = self._tts_pitch_var.get()
+        engine._studio_vol   = self._tts_vol_var.get()
+        return engine
 
-    def _tl_get_track_at_y(self, cy):
-        """Detecta qué pista (V1/A1/A2) está bajo la coordenada Y del canvas."""
-        track_gap = 4
-        for tidx, track in enumerate(self._TL_TRACKS):
-            ty = self._TL_RULER_H + 8 + tidx * (track["height"] + track_gap)
-            if ty <= cy <= ty + track["height"]:
-                return track["id"]
-        return None
-
-    def _get_tl_scale(self):
-        """Calcula píxeles-por-segundo del timeline."""
-        w = self.timeline_canvas.winfo_width() or 800
-        total_dur = max(self.tl_engine.total_duration + 10, 30)
-        usable = w - self._TL_PADDING_X - 20
-        return (usable / total_dur) * self._tl_zoom
-
-    def _draw_timeline(self, timestamps: dict = None):
-        """Dibuja el timeline completo desde el TimelineEngine."""
-        if timestamps:
-            self.timestamps = timestamps
-        canvas = self.timeline_canvas
-        canvas.delete("all")
-
-        w = canvas.winfo_width() or 800
-        h = canvas.winfo_height() or 180
-        px = self._TL_PADDING_X
-        scale = self._get_tl_scale()
-        total_dur = max(self.tl_engine.total_duration + 10, 30)
-
-        # Scroll region
-        total_px = int(px + total_dur * scale + 50)
-        canvas.configure(scrollregion=(0, 0, total_px, h))
-
-        m, s = divmod(int(total_dur), 60)
-        self.timeline_duration_lbl.configure(text=f"⏱ {m:02d}:{s:02d}.0s")
-
-        # ── Regla de tiempo ──
-        ry = self._TL_RULER_H
-        canvas.create_line(px, ry, total_px, ry, fill="#2a2b3e", width=1)
-        step = max(1, int(5 / self._tl_zoom))
-        for t in range(0, int(total_dur) + step, step):
-            x = px + t * scale
-            canvas.create_line(x, ry - 4, x, ry + 4, fill="#4a4b5e")
-            canvas.create_text(x, ry - 9, text=f"{t}s", fill="#5a5b6e", font=("JetBrains Mono", 7))
-
-        # ── Pistas ──
-        track_gap = 4
-        for tidx, track in enumerate(self._TL_TRACKS):
-            ty = self._TL_RULER_H + 8 + tidx * (track["height"] + track_gap)
-            # Label del track
-            canvas.create_text(6, ty + track["height"]//2, text=track["name"],
-                               fill="#6a6b7e", font=("JetBrains Mono", 8), anchor="w")
-            # Fondo de la pista
-            canvas.create_rectangle(px, ty, total_px, ty + track["height"],
-                                    fill="#0d0e16", outline="#1a1b26")
-            track["_render_y"] = ty  # Guardar posición calculada
-
-        # ── Función Hash Color ──
-        def _get_clip_color(source_path: str, base_color: str) -> str:
-            """Genera un color único y consistente por archivo, basado en el color original de la pista."""
-            import hashlib
-            filename = os.path.basename(source_path)
-            hash_val = int(hashlib.md5(filename.encode()).hexdigest(), 16)
-            
-            # Extraer RGB del color base (hex #RRGGBB)
-            r = int(base_color[1:3], 16)
-            g = int(base_color[3:5], 16)
-            b = int(base_color[5:7], 16)
-            
-            # Variar ligeramente el HUE/Luminancia según el hash (+- 30 puntos)
-            offset_r = (hash_val % 60) - 30
-            offset_g = ((hash_val // 60) % 60) - 30
-            offset_b = ((hash_val // 3600) % 60) - 30
-            
-            new_r = max(0, min(255, r + offset_r))
-            new_g = max(0, min(255, g + offset_g))
-            new_b = max(0, min(255, b + offset_b))
-            
-            return f"#{new_r:02x}{new_g:02x}{new_b:02x}"
-
-        # ── Clips reales ──
-        for clip in self.tl_engine.clips:
-            tr = next((t for t in self._TL_TRACKS if t["id"] == clip.track), None)
-            if not tr:
-                continue
-            ty = tr["_render_y"]
-            x1 = px + clip.start * scale
-            x2 = px + clip.end * scale
-            clip_w = max(x2 - x1, 4)
-
-            # Usar color único por clip
-            base_track_color = tr["color"]
-            color = _get_clip_color(clip.source_path, base_track_color)
-            fill_color = color if not clip.muted else "#3a3b4e"
-            outline = "#ffffff" if clip.clip_id == self._selected_clip_id else ""
-            outline_w = 2 if clip.clip_id == self._selected_clip_id else 0
-
-            # Bloque del clip
-            canvas.create_rectangle(x1, ty + 1, x1 + clip_w, ty + tr["height"] - 1,
-                                    fill=fill_color, outline=outline, width=outline_w,
-                                    tags=f"clip_{clip.clip_id}")
-            # Label
-            lbl = clip.label[:20]
-            if clip.muted:
-                lbl = f"🔇 {lbl}"
-            # Asegurar contraste de texto
-            canvas.create_text(x1 + 4, ty + tr["height"]//2, text=lbl,
-                               fill="#ffffff", font=("JetBrains Mono", 7), anchor="w",
-                               tags=f"clip_{clip.clip_id}")
-
-        # ── Playhead (línea roja vertical) ──
-        ph_x = px + self._playhead_pos * scale
-        canvas.create_line(ph_x, 0, ph_x, h, fill="#e74c3c", width=2, tags="playhead")
-        canvas.create_polygon(ph_x - 5, 0, ph_x + 5, 0, ph_x, 8,
-                              fill="#e74c3c", tags="playhead")
-
-    # ─── Interactividad del Timeline (Drag & Drop de clips) ───
-
-    def _tl_find_clip_at(self, cx, cy):
-        """Busca un clip en las coordenadas del canvas."""
-        items = self.timeline_canvas.find_overlapping(cx - 2, cy - 2, cx + 2, cy + 2)
-        for item in items:
-            for tag in self.timeline_canvas.gettags(item):
-                if tag.startswith("clip_"):
-                    try:
-                        return int(tag.split("_")[1])
-                    except ValueError:
-                        pass
-        return None
-
-    def _tl_on_click(self, event):
-        """Click en el timeline: seleccionar clip (preparar drag) o mover playhead."""
-        canvas = self.timeline_canvas
-        cx = canvas.canvasx(event.x)
-        cy = canvas.canvasy(event.y)
-        px = self._TL_PADDING_X
-        scale = self._get_tl_scale()
-
-        # ¿Click en zona del playhead (regla superior)?
-        if cy < self._TL_RULER_H + 8:
-            self._dragging_playhead = True
-            self._dragging_clip_id = None
-            self._playhead_pos = max(0, (cx - px) / scale)
-            if self._previewer:
-                self._previewer.playhead_pos = self._playhead_pos
-            self._update_preview_from_playhead()
-            self._show_preview_frame(self._playhead_pos)
-            self._hide_placeholder()
-            self._draw_timeline()
+    def _tts_generate(self):
+        """Genera WAV del texto actual con los parámetros pro del estudio."""
+        raw = self._tts_textbox.get("1.0", "end").strip()
+        texto = self._voz_pronunciable(raw)
+        if not texto:
+            self._tts_status.configure(text="⚠ Texto vacío o no pronunciable.", text_color="#FF5252")
             return
 
-        # ¿Click en un clip? → preparar para drag
-        clicked_clip = self._tl_find_clip_at(cx, cy)
-        if clicked_clip:
-            self._selected_clip_id = clicked_clip
-            self._dragging_clip_id = clicked_clip
-            clip = self.tl_engine.get_clip_by_id(clicked_clip)
-            if clip:
-                self._drag_offset_x = (cx - px) / scale - clip.start
-                self.selected_clip_lbl.configure(text=f"📌 {clip.label} ({clip.track} | {clip.duration:.1f}s)")
-        else:
-            self._selected_clip_id = None
-            self._dragging_clip_id = None
-            self._dragging_playhead = True   # ← Permite hacer scrub arrastrando desde el fondo vacío
-            self.selected_clip_lbl.configure(text="Sin selección")
-            # Mover playhead al click
-            self._playhead_pos = max(0, (cx - px) / scale)
-            if self._previewer:
-                self._previewer.playhead_pos = self._playhead_pos
-            self._update_preview_from_playhead()
-            self._show_preview_frame(self._playhead_pos)
-            self._hide_placeholder()
+        nombre = re.sub(r"[^\w\-]", "_", self._tts_name_var.get().strip() or "voz")
+        voice_dir = os.path.join(self.workspace_dir, "voces_manuales")
+        os.makedirs(voice_dir, exist_ok=True)
+        output_path = os.path.join(voice_dir, f"{nombre}.wav")
 
-        self._draw_timeline()
+        self._tts_btn_gen.configure(state="disabled", text="⏳ Generando...")
+        self._tts_progress.set(0.1)
+        self._tts_status.configure(text="⏳ Generando audio...", text_color="#FF8F00")
 
-    def _tl_on_drag(self, event):
-        """Arrastrar: mover playhead O mover un clip suavemente."""
-        cx = self.timeline_canvas.canvasx(event.x)
-        px = self._TL_PADDING_X
-        scale = self._get_tl_scale()
-
-        if self._dragging_playhead:
-            self._playhead_pos = max(0, (cx - px) / scale)
-            if self._previewer:
-                self._previewer.playhead_pos = self._playhead_pos
-            self._update_preview_from_playhead()
-            self._show_preview_frame(self._playhead_pos)
-            self._draw_timeline()
-        elif self._dragging_clip_id:
-            # Mover clip en tiempo real con el ratón
-            new_start = max(0, (cx - px) / scale - self._drag_offset_x)
-            clip = self.tl_engine.get_clip_by_id(self._dragging_clip_id)
-            if clip:
-                clip.start = new_start  # Movimiento directo sin undo per-frame
-                self._draw_timeline()
-
-    def _tl_on_release(self, event):
-        """Al soltar el mouse: guardar undo si se arrastró un clip."""
-        if self._dragging_clip_id:
-            # Guardar undo ahora que el arrastre terminó
-            self.tl_engine._save_undo()
-            self._dragging_clip_id = None
-        self._dragging_playhead = False
-
-    def _tl_on_double_click(self, event):
-        """Doble-click: mover clip seleccionado a la posición del playhead."""
-        if self._selected_clip_id:
-            self.tl_engine.move_clip(self._selected_clip_id, self._playhead_pos)
-            self._draw_timeline()
-
-    # ─── Herramientas de Edición (Toolbar) ───
-
-    def _tool_cut(self):
-        """Corta el clip seleccionado en la posición del playhead, creando un gap de 3s para inserción."""
-        if not self._selected_clip_id:
-            self.append_chat("Editor", "⚠ Selecciona un clip primero para cortar.")
-            return
-        gap_duration = 3.0  # Segundos de gap para insertar contenido
-        clip = self.tl_engine.get_clip_by_id(self._selected_clip_id)
-        if not clip:
-            return
-
-        # Primero dividir
-        ok = self.tl_engine.split_clip_at(self._selected_clip_id, self._playhead_pos)
-        if not ok:
-            self.append_chat("Editor", "⚠ El playhead no está dentro del clip seleccionado.")
-            return
-
-        # Mover la parte derecha (el último clip añadido) para crear el gap
-        right_clips = [c for c in self.tl_engine.clips
-                       if c.track == clip.track and c.start >= self._playhead_pos]
-        right_clips.sort(key=lambda c: c.start)
-        for rc in right_clips:
-            rc.start += gap_duration
-
-        self.append_chat("Editor", f"✂ Cortado en {self._playhead_pos:.1f}s — gap de {gap_duration}s creado. "
-                                    f"Arrastra un video/imagen del Media Pool al gap.")
-        self._draw_timeline()
-
-    def _tool_delete(self):
-        """Elimina el clip seleccionado del timeline."""
-        if not self._selected_clip_id:
-            self.append_chat("Editor", "⚠ Selecciona un clip primero para eliminar.")
-            return
-        self.tl_engine.remove_clip(self._selected_clip_id)
-        self._selected_clip_id = None
-        self.selected_clip_lbl.configure(text="Sin selección")
-        self.append_chat("Editor", "🗑 Clip eliminado.")
-        self._draw_timeline()
-
-    def _tool_mute(self):
-        """Silencia o reactiva el clip de audio seleccionado."""
-        if not self._selected_clip_id:
-            self.append_chat("Editor", "⚠ Selecciona un clip de audio para silenciar.")
-            return
-        self.tl_engine.toggle_mute(self._selected_clip_id)
-        self._draw_timeline()
-
-    def _tool_undo(self):
-        """Deshace la última acción."""
-        if self.tl_engine.undo():
-            self.append_chat("Editor", "↩ Acción deshecha.")
-            self._draw_timeline()
-        else:
-            self.append_chat("Editor", "⚠ No hay acciones para deshacer.")
-
-    # ─── Previsualizador VLC (delegado a Previsualizer) ───
-    # Toda la lógica de VLC vive ahora en kr_studio/ui/previsualizer.py
-    # Estos métodos son wrappers finos para mantener compatibilidad con el resto del código.
-
-    def _sync_playhead(self, pos: float):
-        """Callback del previsualizador para mantener sincronizada la línea roja."""
-        self._playhead_pos = pos
-
-    def _hide_placeholder(self):
-        """Oculta el placeholder 'Importa un video' del previsualizador."""
-        if hasattr(self, '_preview_placeholder') and self._preview_placeholder:
+        def _worker():
             try:
-                self._preview_placeholder.place_forget()
-                self._preview_placeholder.destroy()
-            except Exception:
-                pass
-            self._preview_placeholder = None
+                engine = self._tts_get_engine()
+                dur    = engine.generar_audio(texto, output_path)
+                self._tts_last_path = output_path
+                self.after(0, self._tts_on_done, output_path, nombre, dur, 1, 1)
+            except Exception as e:
+                self.after(0, lambda err=e: (
+                    self._tts_status.configure(text=f"❌ {err}", text_color="#FF5252"),
+                    self._tts_progress.set(0),
+                    self._tts_btn_gen.configure(state="normal", text="🔊 Generar TTS"),
+                ))
 
-    def _init_vlc(self):
-        """Delegado: inicializa VLC a través del Previsualizer."""
-        if self._previewer:
-            return self._previewer._init_vlc()
-        return False
+        threading.Thread(target=_worker, daemon=True).start()
 
-    def _embed_vlc_player(self):
-        """Delegado: embebe VLC en el frame."""
-        if self._previewer:
-            self._previewer._embed_player()
-
-    def _load_video_vlc(self, path: str):
-        """Delegado: carga un video en VLC."""
-        if self._previewer:
-            self._previewer.load_video(path)
-            self._vlc_current_video_path = path
-            # Borrar placeholder
-            if hasattr(self, '_preview_placeholder') and self._preview_placeholder:
-                self._preview_placeholder.place_forget()
-                self._preview_placeholder = None
-
-    def _update_preview_from_playhead(self):
-        """Delegado: actualiza timecode/slider desde el playhead."""
-        if self._previewer:
-            self._playhead_pos = self._previewer.playhead_pos
-            self._previewer._update_ui_from_playhead()
-
-    def _show_preview_frame(self, time_pos: float):
-        """Delegado: mueve VLC al frame correcto."""
-        if self._previewer:
-            self._previewer.show_frame_at(time_pos)
-
-    def _on_scrub(self, value):
-        """Delegado: callback del slider de scrubbing."""
-        if self._previewer:
-            self._previewer.scrub(value)
-            self._playhead_pos = self._previewer.playhead_pos
-
-    def _on_volume(self, value):
-        """Delegado: ajusta el volumen."""
-        vol = int(value)
-        if self._previewer:
-            self._previewer.set_volume(vol)
-
-    def _toggle_video_mute(self):
-        """Delegado: silencia o reactiva el audio del video."""
-        if self._previewer:
-            muted = self._previewer.toggle_video_mute()
-            self._video_muted = muted
-            if muted:
-                self.btn_mute_video.configure(text="📹🔇", fg_color="#c0392b")
-                self.append_chat("Editor", "🔇 Audio del video silenciado.")
-            else:
-                self.btn_mute_video.configure(text="📹🔊", fg_color="#1a1b2e")
-                self.append_chat("Editor", "🔊 Audio del video reactivado.")
-
-    def _preview_play_pause(self):
-        """Delegado: alterna reproducción timeline-driven."""
-        if self._previewer:
-            self._hide_placeholder()
-            self._previewer.play_pause()
-            self._preview_playing = self._previewer.is_playing
-            self._playhead_pos = self._previewer.playhead_pos
-
-    def _vlc_poll_position(self):
-        """Delegado: loop de polling (ya no se llama desde aquí, vive en Previsualizer)."""
-        pass  # El polling vive ahora dentro de Previsualizer._poll_position
-
-    def _get_or_create_audio_player(self, track: str):
-        """Delegado: crea/obtiene reproductor de audio."""
-        if self._previewer:
-            return self._previewer._get_or_create_audio_player(track)
-        return None
-
-    def _sync_audio_tracks(self, timeline_pos: float, force_start: bool = False):
-        """Delegado: sincroniza pistas de audio."""
-        if self._previewer:
-            self._previewer._sync_audio(timeline_pos, force_start)
-
-    def _preview_stop(self):
-        """Delegado: detiene la reproducción."""
-        if self._previewer:
-            self._previewer.stop()
-            self._preview_playing = False
-            self._playhead_pos = 0.0
-
-    def _preview_goto_start(self):
-        """Delegado: salta al inicio."""
-        if self._previewer:
-            self._previewer.goto_start()
-            self._playhead_pos = 0.0
-
-    def _preview_goto_end(self):
-        """Delegado: salta al final."""
-        if self._previewer:
-            self._previewer.goto_end()
-            self._playhead_pos = self._previewer.playhead_pos
-
-    def _on_zoom(self, value):
-        self._tl_zoom = value
-        self._draw_timeline()
-
-    # ─── Guardar / Cargar Proyecto ───
-
-    def _save_project(self):
-        """Guarda el estado del timeline y el pool en un archivo .krproj (JSON)."""
-        import json
-        
-        if not self.tl_engine.clips and not self._media_pool_items:
-            self.append_chat("Sistema", "⚠ No hay nada que guardar.")
-            return
-
-        path = filedialog.asksaveasfilename(
-            title="Guardar Proyecto KR-STUDIO",
-            defaultextension=".krproj",
-            filetypes=[("KR-STUDIO Project", "*.krproj"), ("Archivos JSON", "*.json")],
-            initialdir=self.workspace_dir
-        )
-        if not path:
-            return
-
-        data = {
-            "media_pool": self._media_pool_items,
-            "timeline": self.tl_engine.to_dict()
-        }
-
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-            self.append_chat("Sistema", f"💾 Proyecto guardado:\n{os.path.basename(path)}")
-        except Exception as e:
-            self.append_chat("Error", f"❌ Error guardando: {e}")
-
-    def _load_project(self):
-        """Carga un estado del timeline desde un archivo .krproj (JSON)."""
-        import json
-
-        path = filedialog.askopenfilename(
-            title="Cargar Proyecto KR-STUDIO",
-            filetypes=[("KR-STUDIO Project", "*.krproj"), ("Archivos JSON", "*.json")],
-            initialdir=self.workspace_dir
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            # Limpiar estado actual
-            self._preview_stop()
-            self._media_pool_items.clear()
-            self.media_listbox.delete(0, tk.END)
-            self._vlc_current_video_path = None
-            self._raw_video_path = None
-            
-            # Restaurar Media Pool
-            pool = data.get("media_pool", [])
-            for p in pool:
-                if os.path.exists(p):
-                    self._media_pool_items.append(p)
-                    name = os.path.basename(p)
-                    icon = "🎬" if p.lower().endswith(('.mp4', '.mkv', '.avi', '.png', '.jpg')) else "🔊"
-                    self.media_listbox.insert(tk.END, f"{icon} {name}")
-            
-            # Restaurar Timeline
-            self.tl_engine.from_dict(data.get("timeline", {}))
-            
-            # Recargar ventana
-            self._playhead_pos = 0.0
-            self._show_preview_frame(0.0)
-            self._draw_timeline()
-            
-            self.append_chat("Sistema", f"📂 Proyecto cargado:\n{os.path.basename(path)}")
-
-        except Exception as e:
-            self.append_chat("Error", f"❌ Error cargando proyecto: {e}")
-
-    # ─── Importar Media ───
-
-    def _import_media(self):
-        """Abre file dialog para importar video o audio solo al Media Pool."""
-        path = filedialog.askopenfilename(
-            title="Importar Media",
-            filetypes=[("Video & Imágenes", "*.mp4 *.mkv *.avi *.png *.jpg *.jpeg"),
-                       ("Audio", "*.mp3 *.wav *.ogg"), ("Todos", "*.*")],
-            initialdir=os.path.expanduser("~/Videos")
-        )
-        if not path:
-            return
-        name = os.path.basename(path)
-        is_video = path.lower().endswith(('.mp4', '.mkv', '.avi', '.png', '.jpg', '.jpeg'))
-
-        if is_video:
-            icon = "🎬"
-            self.append_chat("Editor", f"📹 Media añadido al pool: {name}")
+    def _tts_on_done(self, path: str, nombre: str, dur: float, idx: int, total: int):
+        """Callback al terminar generación de un audio."""
+        progress = idx / total
+        self._tts_progress.set(progress)
+        if idx == total:
+            self._tts_status.configure(
+                text=f"✅ {nombre}.wav  ({dur:.1f}s)  →  {os.path.dirname(path)}",
+                text_color="#00E676")
+            self._tts_btn_gen.configure(state="normal", text="🔊 Generar TTS")
         else:
-            icon = "🔊"
-            self.append_chat("Editor", f"🎵 Audio añadido al pool: {name}")
+            self._tts_status.configure(
+                text=f"⏳ {idx}/{total}  —  {nombre}.wav ({dur:.1f}s)",
+                text_color="#FF8F00")
+        self._tts_add_to_library(path, nombre, dur)
 
-        # Añadir al pool (sin duplicados y sin insertar al timeline)
-        if path not in self._media_pool_items:
-            self._media_pool_items.append(path)
-            self.media_listbox.insert(tk.END, f"{icon} {name}")
+    def _tts_add_to_library(self, path: str, nombre: str, dur: float):
+        """Agrega un item a la biblioteca visual."""
+        # Evitar duplicados
+        for item in self._tts_lib_items:
+            if item["path"] == path:
+                return
 
-    def _select_raw_video(self):
-        self._import_media()
+        item_frame = ctk.CTkFrame(self._tts_lib_scroll, fg_color="#0d0e1a",
+                                   corner_radius=6, border_width=1,
+                                   border_color="#1a1b2e")
+        item_frame.pack(fill="x", pady=2, padx=2)
+        item_frame.grid_columnconfigure(0, weight=1)
 
-    # ─── Media Pool Drag → Timeline ───
+        # Nombre y duración
+        info = ctk.CTkFrame(item_frame, fg_color="transparent")
+        info.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 0))
+        ctk.CTkLabel(info, text=f"🔊 {nombre}",
+                     font=("JetBrains Mono", 10, "bold"),
+                     text_color="#CCCCCC", anchor="w").pack(side="left")
+        ctk.CTkLabel(info, text=f"{dur:.1f}s",
+                     font=("JetBrains Mono", 9),
+                     text_color="#555577").pack(side="right")
 
-    def _media_drag_start(self, event):
-        """Inicia el drag desde el Media Pool."""
-        idx = self.media_listbox.nearest(event.y)
-        if idx < 0 or idx >= len(self._media_pool_items):
-            self._drag_media_idx = None
-            return
-        self._drag_media_idx = idx
-        self.media_listbox.selection_clear(0, tk.END)
-        self.media_listbox.selection_set(idx)
+        # Ruta corta
+        short_path = "..." + path[-45:] if len(path) > 48 else path
+        ctk.CTkLabel(item_frame, text=short_path,
+                     font=("JetBrains Mono", 8),
+                     text_color="#333355", anchor="w"
+                     ).grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
 
-    def _media_drag_motion(self, event):
-        """Muestra cursor de arrastre y dibuja preview 'ghost' en el timeline."""
-        if getattr(self, '_drag_media_idx', None) is not None:
-            self.media_listbox.configure(cursor="hand2")
-            
-            # Obtener coordenadas relativas al timeline
-            tl_x_root = self.timeline_canvas.winfo_rootx()
-            tl_y_root = self.timeline_canvas.winfo_rooty()
-            tl_w = self.timeline_canvas.winfo_width()
-            tl_h = self.timeline_canvas.winfo_height()
+        # Botones
+        btns = ctk.CTkFrame(item_frame, fg_color="transparent")
+        btns.grid(row=0, column=1, rowspan=2, padx=(0, 4), pady=2)
 
-            # Limpiar ghost previo
-            self.timeline_canvas.delete("drag_ghost")
+        ctk.CTkButton(btns, text="▶",
+                      command=lambda p=path: self._tts_play(p),
+                      fg_color="#00695C", hover_color="#004D40",
+                      width=30, height=22,
+                      font=("JetBrains Mono", 10, "bold")).pack(pady=(0, 2))
+        ctk.CTkButton(btns, text="🗑",
+                      command=lambda f=item_frame, p=path: self._tts_delete_item(f, p),
+                      fg_color="#3a1010", hover_color="#5a1818",
+                      width=30, height=22,
+                      font=("JetBrains Mono", 10)).pack()
 
-            # Si el ratón está sobre el timeline, dibujar preview
-            if tl_x_root <= event.x_root <= tl_x_root + tl_w and tl_y_root <= event.y_root <= tl_y_root + tl_h:
-                cx = self.timeline_canvas.canvasx(event.x_root - tl_x_root)
-                cy = self.timeline_canvas.canvasy(event.y_root - tl_y_root)
-                track_id = self._tl_get_track_at_y(cy)
+        record = {"path": path, "nombre": nombre, "dur": dur, "frame": item_frame}
+        self._tts_lib_items.append(record)
+        self._tts_lib_all.append(record)
 
-                if track_id:
-                    # Encontrar los datos de la pista
-                    tr = next((t for t in self._TL_TRACKS if t["id"] == track_id), None)
-                    if tr:
-                        ty = tr.get("_render_y", 0)
-                        if ty > 0:
-                            # Dibujar bloque transparente indicando dónde caerá
-                            width = 100  # un ancho aproximado genérico
-                            self.timeline_canvas.create_rectangle(
-                                cx, ty + 1, cx + width, ty + tr["height"] - 1,
-                                fill="", outline="#f1c40f", dash=(4, 2), width=2,
-                                tags="drag_ghost"
-                            )
-
-    def _media_drag_drop(self, event):
-        """Suelta el archivo del Media Pool. Si cae en el timeline, añade el clip."""
-        self.media_listbox.configure(cursor="")
-        self.timeline_canvas.delete("drag_ghost")  # Limpiar ghost
-
-        idx = getattr(self, '_drag_media_idx', None)
-        if idx is None or idx >= len(self._media_pool_items):
-            return
-        path = self._media_pool_items[idx]
-        name = os.path.basename(path)
-        is_video = path.lower().endswith(('.mp4', '.mkv', '.avi'))
-        is_image = path.lower().endswith(('.png', '.jpg', '.jpeg'))
-
-        # Detectar si el mouse soltó sobre el frame del timeline
-        tl_x_root = self.timeline_canvas.winfo_rootx()
-        tl_y_root = self.timeline_canvas.winfo_rooty()
-        tl_w = self.timeline_canvas.winfo_width()
-        tl_h = self.timeline_canvas.winfo_height()
-
-        if tl_x_root <= event.x_root <= tl_x_root + tl_w and tl_y_root <= event.y_root <= tl_y_root + tl_h:
-            # Calcular en qué track y posición temporal se soltó
-            cx = self.timeline_canvas.canvasx(event.x_root - tl_x_root)
-            cy = self.timeline_canvas.canvasy(event.y_root - tl_y_root)
-            scale = self._get_tl_scale()
-            drop_time = max(0.0, (cx - self._TL_PADDING_X) / scale)
-            target_track = self._tl_get_track_at_y(cy)
-
-            is_video_type = is_video or is_image
-
-            if target_track:
-                # Validar tipo de track
-                if is_video_type and not target_track.startswith("V"):
-                    target_track = "V2"  # V2 es buen default para arrastrar encima de la base
-                elif not is_video_type and target_track.startswith("V"):
-                    target_track = "A2"
-            else:
-                target_track = "V2" if is_video_type else ("A1" if "tts" in name.lower() or "audio_" in name.lower() else "A2")
-
-            if is_video_type:
-                dur = self.tl_engine._get_video_duration(path)
-                self.tl_engine.add_clip(source_path=path, track=target_track, start=drop_time,
-                                         duration=dur, label=name)
-                # Si es el primer video en el proyecto
-                if self._vlc_current_video_path is None and drop_time == 0:
-                    self._vlc_current_video_path = path
-                    self._load_video_vlc(path)
-            else:
-                dur = self.tl_engine._get_audio_duration(path)
-                self.tl_engine.add_clip(source_path=path, track=target_track, start=drop_time,
-                                         duration=dur, label=name)
-
-            self.append_chat("Editor", f"📥 Añadido '{name}' a la pista {target_track} en {drop_time:.1f}s")
-            self._draw_timeline()
-        else:
-            # Drop fuera del timeline pero fuera del Media Pool -> comportamiento legacy
-            widget_y = event.y_root - self.media_listbox.winfo_rooty()
-            widget_x = event.x_root - self.media_listbox.winfo_rootx()
-            if widget_y > self.media_listbox.winfo_height() or widget_x > self.media_listbox.winfo_width() or widget_y < 0:
-                is_video_type = is_video or is_image
-                if is_video_type:
-                    self._raw_video_path = path
-                    self.tl_engine.auto_load_video(path)
-                    self._load_video_vlc(path)
-                    self.append_chat("Editor", f"📹 Video base reemplazado: {name}")
-                else:
-                    track = "A1" if "tts" in name.lower() or "audio_" in name.lower() else "A2"
-                    start = self.tl_engine.total_duration
-                    dur = self.tl_engine._get_audio_duration(path)
-                    self.tl_engine.add_clip(source_path=path, track=track, start=start,
-                                             duration=dur, label=name)
-                    self.append_chat("Editor", f"🎵 Audio añadido a {track}: {name}")
-                self._draw_timeline()
-
-        self._drag_media_idx = None
-
-    # ─── Fullscreen Video ───
-
-    def _toggle_fullscreen(self):
-        """Abre o cierra una ventana de pantalla completa con VLC."""
-        if self._fullscreen_win and self._fullscreen_win.winfo_exists():
-            # Sacar de fullscreen y re-embeber en el preview principal
-            self._fullscreen_win.destroy()
-            self._fullscreen_win = None
-            if self._vlc_player:
-                self._embed_vlc_player()
-            return
-
-        if not self._vlc_player or not self._raw_video_path:
-            self.append_chat("Editor", "⚠ Importa un video primero.")
-            return
-
-        self._fullscreen_win = tk.Toplevel(self)
-        self._fullscreen_win.title("KR-STUDIO — Preview")
-        self._fullscreen_win.configure(bg="#000000")
-        self._fullscreen_win.attributes("-fullscreen", True)
-        self._fullscreen_win.bind("<Escape>", lambda e: self._toggle_fullscreen())
-
-        fs_frame = tk.Frame(self._fullscreen_win, bg="#000000")
-        fs_frame.pack(fill="both", expand=True)
-        self._fullscreen_win.update_idletasks()
-
-        # Re-embeber VLC en la ventana fullscreen
-        wid = fs_frame.winfo_id()
-        if wid and self._vlc_player:
-            self._vlc_player.set_xwindow(wid)
-
-    def _manual_render(self):
-        """Modo Manual: exportar proyecto timeline completo."""
-        self._do_render()
-
-    def _auto_record_and_render(self):
-        """Modo Auto: graba pantalla + ejecuta director + renderiza."""
+    def _tts_batch_from_json(self):
+        """
+        Genera TTS para TODAS las escenas con campo 'voz' del JSON activo en el editor.
+        Guarda en la carpeta del proyecto activo junto al JSON.
+        Muestra progreso en tiempo real.
+        """
         json_data = self._parse_editor_json()
-        if json_data is None:
+        if not json_data:
+            self._tts_status.configure(text="⚠ No hay JSON válido en el editor.", text_color="#FF5252")
             return
 
-        if not self.wid_b:
-            self.append_chat("Error", "❌ No hay Terminal B.")
-            return
-
-        self.render_status.configure(text="🤖 Auto-grabando...")
-        self.btn_auto_render.configure(state="disabled")
-
-        import threading
-        threading.Thread(target=self._auto_thread, args=(json_data,), daemon=True).start()
-
-    def _auto_thread(self, json_data):
-        """Thread de grabación automática + renderizado."""
-        try:
-            from kr_studio.core.record_engine import ScreenRecorder
-
-            recorder = ScreenRecorder(self.workspace_dir)
-            wid = self.wid_b
-
-            self.after(0, self.render_status.configure, {"text": "🔴 Grabando..."})
-
-            # Iniciar grabación
-            recorder.start(wid)
-            time.sleep(1.0)
-
-            # Ejecutar director según modo seleccionado
-            mode = self.post_mode_var.get()
-            
-            if mode == "SOLO TERM":
-                from kr_studio.core.solo_director import SoloDirectorEngine
-                topic = self._get_last_user_topic() or "Test"
-                director = SoloDirectorEngine(self.master_app, topic, self.video_duration_min, self.workspace_dir)
-                director.wid_b = self.wid_b
-            else:
-                from kr_studio.core.director import DirectorEngine
-                director = DirectorEngine(self, json_data, self.workspace_dir)
-                director.wid_a = self.wid_a
-                director.wid_b = self.wid_b
-                
-            director.typing_delay = self.typing_speed_pct
-            director.floating_ctrl = self._floating_ctrl
-
-            director._start_wall = time.monotonic()
-            
-            if mode == "SOLO TERM":
-                # En SOLO, inyectamos JSON en tiempo real a Terminal B
-                director.on_json_terminal_b = self._inject_json_editor_b
-                director._run_solo_sequence()
-            else:
-                director._run_sequence()
-
-            # Detener grabación
-            video_path = recorder.stop()
-            time.sleep(0.5)
-
-            # Guardar timestamps
-            self.timestamps = director.timestamps
-            self.after(0, self._draw_timeline, self.timestamps)
-
-            # Renderizar
-            self.after(0, self.render_status.configure, {"text": "🎬 Renderizando..."})
-            self._do_render(video_path)
-
-        except Exception as e:
-            self.after(0, self.render_status.configure, {"text": f"❌ Error: {e}"})
-        finally:
-            self.after(0, self.btn_auto_render.configure, {"state": "normal"})
-
-    def _show_render_progress_ui(self):
-        """Muestra una ventana modal flotante para el progreso de renderizado."""
-        if hasattr(self, "_render_win") and self._render_win and self._render_win.winfo_exists():
-            return self._render_win, self._render_lbl, self._render_bar
-
-        self._render_win = ctk.CTkToplevel(self)
-        self._render_win.title("Exportando Video...")
-        # Hacer la ventana más alta para acomodar el log
-        self._render_win.geometry("500x350")
-        self._render_win.resizable(False, False)
-        self._render_win.transient(self)
-        
-        self.after(100, lambda: self._render_win.grab_set() if self._render_win.winfo_exists() else None)
-
-        self.update_idletasks()
-        x = self.winfo_rootx() + (self.winfo_width() // 2) - 250
-        y = self.winfo_rooty() + (self.winfo_height() // 2) - 175
-        self._render_win.geometry(f"+{x}+{y}")
-
-        title_lbl = ctk.CTkLabel(self._render_win, text="🎬 Renderizando Composición Final", 
-                                font=("JetBrains Mono", 14, "bold"), text_color="#1abc9c")
-        title_lbl.pack(pady=(15, 5))
-
-        self._render_lbl = ctk.CTkLabel(self._render_win, text="Preparando recursos...", 
-                                      font=("JetBrains Mono", 11), text_color="#a9b1d6")
-        self._render_lbl.pack(pady=5)
-
-        self._render_bar = ctk.CTkProgressBar(self._render_win, width=450, 
-                                            progress_color="#2ecc71", fg_color="#1a1b26")
-        self._render_bar.pack(pady=10)
-        self._render_bar.set(0)
-
-        # Consola de logs integrada
-        self._render_log_txt = ctk.CTkTextbox(self._render_win, width=450, height=180,
-                                            font=("JetBrains Mono", 10),
-                                            fg_color="#0f0f14", text_color="#a9b1d6",
-                                            state="disabled")
-        self._render_log_txt.pack(pady=(0, 10))
-
-        # Prevenir cierre manual (forzar esperar)
-        self._render_win.protocol("WM_DELETE_WINDOW", lambda: None)
-        
-        self._render_win.update_idletasks()
-        self._render_win.update()
-        
-        return self._render_win, self._render_lbl, self._render_bar
-
-    def _update_render_progress(self, pct, msg):
-        """Callback llamado por VideoEngine desde otro thread."""
-        try:
-            if hasattr(self, "_render_lbl") and self._render_lbl.winfo_exists():
-                if pct is not None:
-                    self.after(0, self._render_bar.set, float(pct) / 100.0)
-                    self.after(0, self._render_lbl.configure, {"text": f"Progreso: {pct:.1f}%"})
-                
-                # Si hay mensaje, agregarlo al textbox (ignorar los mensajes repetitivos de TqdmCapture en el log principal si pct existe)
-                if msg is not None and hasattr(self, "_render_log_txt") and self._render_log_txt.winfo_exists():
-                    def append_log():
-                        self._render_log_txt.configure(state="normal")
-                        self._render_log_txt.insert("end", str(msg) + "\n")
-                        self._render_log_txt.see("end")
-                        self._render_log_txt.configure(state="disabled")
-                    self.after(0, append_log)
-        except Exception:
-            pass
-
-    def _do_render(self, source_path_not_used=None):
-        """Renderiza la composición final desde TImelineEngine directamente."""
-        # Validar si hay clips
-        if not self.tl_engine.clips:
-            self.append_chat("Error", "❌ El Timeline está vacío. Agrega medios antes de exportar.")
-            return
-
-        self.btn_manual_render.configure(state="disabled")
-        self._show_render_progress_ui()
-
-        # Extraer UI values en MAiN THREAD para evitar deadlocks de Tkinter en threads
-        resolution = self.res_combo.get() if hasattr(self, 'res_combo') else "1080p"
-        preset = self.quality_combo.get() if hasattr(self, 'quality_combo') else "medium"
-
-        # Lanzar en thread con un pequeño delay para asegurar pintar la UI
-        import threading
-        self.after(500, lambda: threading.Thread(target=self._render_thread_worker, args=(resolution, preset), daemon=True).start())
-
-    def _render_thread_worker(self, resolution, preset):
-        try:
-            from kr_studio.core.video_engine import VideoEngine
-
-            engine = VideoEngine(self.workspace_dir)
-            
-            # Crear nombre único con timestamp para no sobreescribir
-            import time as _time
-            ts = _time.strftime("%Y%m%d_%H%M%S")
-            exports_dir = os.path.join(self.workspace_dir, "exports")
-            os.makedirs(exports_dir, exist_ok=True)
-            output_path = os.path.join(exports_dir, f"VIRAL_REEL_{ts}.mp4")
-
-            # Enviar los clips y duración al VideoEngine multipista
-            total_dur = self.tl_engine.total_duration
-            if total_dur <= 0:
-                raise Exception("Duración del timeline es 0s.")
-
-            self.after(0, self.append_chat, "Editor", f"🚀 Iniciando exportación Multipista a {resolution} ({preset})...")
-
-            result = engine.render_timeline(
-                clips_data=self.tl_engine.clips,
-                total_duration=total_dur,
-                output_path=output_path,
-                resolution=resolution,
-                preset=preset,
-                progress_callback=self._update_render_progress
-            )
-
-            # Destruir ventana modal
-            self._safe_destroy_render_win()
-
-            if result:
-                size_mb = os.path.getsize(result) / (1024 * 1024)
-                self.after(0, self.render_status.configure,
-                          {"text": f"✅ {os.path.basename(result)} ({size_mb:.1f} MB)"})
-                self.after(0, self.append_chat, "Sistema",
-                          f"✅ Video exportado exitosamente:\n{result}\nTamaño: {size_mb:.1f} MB")
-            else:
-                self.after(0, self.render_status.configure, {"text": "❌ Error en renderizado"})
-                self.after(0, self.append_chat, "Error", "Fallo durante la exportación. Revisa la consola.")
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            self._safe_destroy_render_win()
-            self.after(0, self.render_status.configure, {"text": f"❌ Error: {str(e)[:50]}"})
-            self.after(0, self.append_chat, "Error", f"Fallo Crítico Render: {e}")
-        finally:
-            # SIEMPRE re-habilitar el botón de exportar
+        # Determinar carpeta destino (junto al JSON del proyecto)
+        series_dir = getattr(self.series_orchestrator, "_series_dir", None)
+        if series_dir:
             try:
-                self.after(0, self._re_enable_render_btn)
+                tab = self.chapters_tabview.get()
+                tab_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", tab.lower())
+                audio_dir = os.path.join(series_dir, tab_safe, "audio")
             except Exception:
+                audio_dir = os.path.join(series_dir, "audio_batch")
+        else:
+            audio_dir = os.path.join(self.workspace_dir, "voces_manuales", "batch")
+        os.makedirs(audio_dir, exist_ok=True)
+
+        escenas_con_voz = [
+            (i, e) for i, e in enumerate(json_data)
+            if self._voz_pronunciable(e.get("voz", ""))
+        ]
+        if not escenas_con_voz:
+            self._tts_status.configure(text="⚠ Ninguna escena tiene texto pronunciable.", text_color="#FF5252")
+            return
+
+        total = len(escenas_con_voz)
+        self._tts_btn_gen.configure(state="disabled", text="⏳ Batch...")
+        self._tts_progress.set(0)
+        self._tts_status.configure(text=f"⏳ Batch: 0/{total}", text_color="#FF8F00")
+        self.append_chat("TTS", f"🔊 Batch TTS iniciado: {total} escenas → {audio_dir}")
+
+        def _worker():
+            import hashlib
+            engine  = self._tts_get_engine()
+            errores = 0
+            for count, (idx, escena) in enumerate(escenas_con_voz, 1):
+                voz   = self._voz_pronunciable(escena.get("voz", ""))
+                h     = hashlib.md5(voz.encode()).hexdigest()[:8]
+                path  = os.path.join(audio_dir, f"audio_{idx:03d}_{h}.wav")
+                nombre = f"escena_{idx:03d}"
+
+                if os.path.exists(path):
+                    msg = f"  Cache ✓ {nombre}"
+                    self.after(0, self._tts_status.configure,
+                               {"text": f"⏳ {count}/{total} — {msg}", "text_color": "#FF8F00"})
+                    self.after(0, self._tts_progress.set, count / total)
+                    self.after(0, self.append_chat, "TTS", msg)
+                    continue
+
+                try:
+                    dur = engine.generar_audio(voz, path)
+                    msg = f"  ✅ {nombre} — {dur:.1f}s"
+                    self.after(0, self._tts_on_done, path, nombre, dur, count, total)
+                    self.after(0, self.append_chat, "TTS", msg)
+                except Exception as e:
+                    errores += 1
+                    msg = f"  ❌ {nombre}: {e}"
+                    self.after(0, self.append_chat, "Error", msg)
+                    self.after(0, self._tts_status.configure,
+                               {"text": f"❌ Error en {nombre}", "text_color": "#FF5252"})
+
+            final = (f"✅ Batch completo: {total - errores}/{total} audios → {audio_dir}"
+                     if errores == 0 else
+                     f"⚠ Batch: {errores} errores de {total}")
+            self.after(0, self.append_chat, "Sistema", final)
+            self.after(0, self._tts_status.configure, {"text": final, "text_color": "#00E676" if errores == 0 else "#FF8F00"})
+            self.after(0, self._tts_progress.set, 1.0)
+            self.after(0, self._tts_btn_gen.configure, {"state": "normal", "text": "🔊 Generar TTS"})
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _tts_play(self, path: str):
+        """Reproduce WAV con mpv en background."""
+        import subprocess as _sp
+        if not os.path.exists(path):
+            return
+        self._tts_stop_playback()
+        self._tts_current_proc = _sp.Popen(
+            ["mpv", "--no-video", "--really-quiet", path],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+
+    def _tts_stop_playback(self):
+        proc = self._tts_current_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except Exception:
+                try: proc.kill()
+                except Exception: pass
+        self._tts_current_proc = None
+
+    def _tts_preview(self):
+        if not self._tts_last_path or not os.path.exists(self._tts_last_path):
+            self._tts_status.configure(text="⚠ Primero genera un audio.", text_color="#FF8F00")
+            return
+        self._tts_play(self._tts_last_path)
+
+    def _tts_delete_item(self, frame, path: str):
+        frame.destroy()
+        try:
+            if os.path.exists(path): os.remove(path)
+        except OSError: pass
+        self._tts_lib_items = [i for i in self._tts_lib_items if i["path"] != path]
+        self._tts_lib_all   = [i for i in self._tts_lib_all   if i["path"] != path]
+
+    def _tts_clear_all(self):
+        for item in list(self._tts_lib_items):
+            item["frame"].destroy()
+            try:
+                if os.path.exists(item["path"]): os.remove(item["path"])
+            except OSError: pass
+        self._tts_lib_items.clear()
+        self._tts_lib_all.clear()
+        self._tts_status.configure(text="Biblioteca limpiada.", text_color="#AAAAAA")
+
+    def _tts_filter_library(self, *args):
+        query = self._tts_filter_var.get().lower()
+        for item in self._tts_lib_all:
+            if query in item["nombre"].lower() or query in item["path"].lower():
+                item["frame"].pack(fill="x", pady=2, padx=2)
+            else:
+                item["frame"].pack_forget()
+
+    def _tts_refresh_library(self):
+        """Escanea la carpeta voces_manuales y recarga la biblioteca."""
+        voice_dir = os.path.join(self.workspace_dir, "voces_manuales")
+        if not os.path.exists(voice_dir):
+            return
+        existing_paths = {i["path"] for i in self._tts_lib_all}
+        for fname in sorted(os.listdir(voice_dir)):
+            if not fname.endswith(".wav"):
+                continue
+            path = os.path.join(voice_dir, fname)
+            if path in existing_paths:
+                continue
+            # Obtener duración
+            try:
+                import wave as _wave
+                with _wave.open(path, "r") as wf:
+                    dur = wf.getnframes() / float(wf.getframerate())
+            except Exception:
+                dur = 0.0
+            nombre = fname.replace(".wav", "")
+            self._tts_add_to_library(path, nombre, dur)
+
+    def _tts_open_folder(self):
+        import subprocess as _sp
+        d = os.path.join(self.workspace_dir, "voces_manuales")
+        os.makedirs(d, exist_ok=True)
+        _sp.Popen(["xdg-open", d])
+
+    def _build_postprod_tab(self):
+        """Pestaña 2: Orquestador de Series y Películas. Genera N capítulos secuencialmente."""
+        self.tab2.grid_rowconfigure(0, weight=1)
+        self.tab2.grid_columnconfigure(0, weight=1) # Panel Estructura
+        self.tab2.grid_columnconfigure(1, weight=3) # Panel View JSONs
+
+        # ── PANEL IZQUIERDO: Estructura de la Serie ──
+        left_panel = ctk.CTkFrame(self.tab2, fg_color=COLORS["bg_panel"], corner_radius=10,
+                                  border_width=1, border_color=COLORS["border"])
+        left_panel.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        
+        lh = ctk.CTkFrame(left_panel, fg_color=COLORS["header_bg"], height=40, corner_radius=0)
+        lh.pack(fill="x")
+        lh.pack_propagate(False)
+        ctk.CTkLabel(lh, text="📚", font=("Arial", 18)).pack(side="left", padx=(12, 4))
+        ctk.CTkLabel(lh, text="PLANIFICADOR DE SERIE", font=("JetBrains Mono", 12, "bold"),
+                     text_color=COLORS["accent_cyan"]).pack(side="left")
+
+        # Controles
+        ctrl_frame = ctk.CTkFrame(left_panel, fg_color="transparent")
+        ctrl_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(ctrl_frame, text="Tema Principal de la Serie:", font=("JetBrains Mono", 10, "bold"), text_color=COLORS["text_dim"]).pack(anchor="w", pady=(0, 2))
+        self.series_topic_entry = ctk.CTkEntry(ctrl_frame, placeholder_text="Ej: Curso de Hacking Ético con Nmap...", font=("JetBrains Mono", 11), fg_color=COLORS["bg_dark"], border_color=COLORS["border"])
+        self.series_topic_entry.pack(fill="x", pady=(0, 8))
+
+        # Selector de Modo
+        mode_frame = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
+        mode_frame.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(mode_frame, text="Estrategia de Ejecución:", font=("JetBrains Mono", 10, "bold"), text_color=COLORS["text_dim"]).pack(side="left")
+        self.orchestrator_mode_var = ctk.StringVar(value="DUAL AI")
+        self.orchestrator_mode_seg = ctk.CTkSegmentedButton(mode_frame, values=["DUAL AI", "SOLO TERM"], 
+                                                           variable=self.orchestrator_mode_var,
+                                                           selected_color=COLORS["accent_cyan"], 
+                                                           selected_hover_color="#00b8d4",
+                                                           unselected_color=COLORS["bg_dark"], 
+                                                           unselected_hover_color="#2a2b3e",
+                                                           text_color=COLORS["text_primary"], font=("JetBrains Mono", 10, "bold"))
+        self.orchestrator_mode_seg.pack(side="right", fill="x", expand=True, padx=(10, 0))
+
+        # Selector de Formato
+        format_frame = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
+        format_frame.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(format_frame, text="Formato de Video:", font=("JetBrains Mono", 10, "bold"), text_color=COLORS["text_dim"]).pack(side="left")
+        self.orchestrator_format_var = ctk.StringVar(value="16:9 (YouTube)")
+        self.orchestrator_format_seg = ctk.CTkSegmentedButton(format_frame, values=["16:9 (YouTube)", "9:16 (Vertical)"], 
+                                                           variable=self.orchestrator_format_var,
+                                                           selected_color="#7B1FA2", 
+                                                           selected_hover_color="#6A1B9A",
+                                                           unselected_color=COLORS["bg_dark"], 
+                                                           unselected_hover_color="#2a2b3e",
+                                                           text_color=COLORS["text_primary"], font=("JetBrains Mono", 10, "bold"))
+        self.orchestrator_format_seg.pack(side="right", fill="x", expand=True, padx=(10, 0))
+
+        # Fila para # Capítulos y Botón Generar
+        row2 = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
+        row2.pack(fill="x")
+        
+        ctk.CTkLabel(row2, text="# Capítulos:", font=("JetBrains Mono", 10, "bold"), text_color=COLORS["text_dim"]).pack(side="left")
+        self.series_chapters_var = ctk.StringVar(value="5")
+        self.series_chapters_combo = ctk.CTkComboBox(row2, values=[str(i) for i in range(1, 21)], variable=self.series_chapters_var, width=60, font=("JetBrains Mono", 11), fg_color=COLORS["bg_dark"], border_color=COLORS["border"])
+        self.series_chapters_combo.pack(side="left", padx=(4, 10))
+
+        self.btn_generate_master = ctk.CTkButton(row2, text="✨ Generar Estructura", command=self._generate_master_structure,
+                                                 font=("JetBrains Mono", 10, "bold"), fg_color="#7B1FA2", hover_color="#6A1B9A")
+        self.btn_generate_master.pack(side="right", fill="x", expand=True)
+
+        # Separador
+        ctk.CTkFrame(left_panel, height=1, fg_color=COLORS["border"]).pack(fill="x", padx=10, pady=5)
+
+        # Lista de capítulos generados
+        ctk.CTkLabel(left_panel, text="Estructura Generada:", font=("JetBrains Mono", 10, "bold"), text_color=COLORS["text_dim"]).pack(anchor="w", padx=10)
+        self.chapters_list_frame = ctk.CTkScrollableFrame(left_panel, fg_color=COLORS["bg_dark"], corner_radius=6, border_width=1, border_color=COLORS["border"])
+        self.chapters_list_frame.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+
+        # Botón Render de Serie Completa
+        self.btn_render_series = ctk.CTkButton(left_panel, text="🎬 Renderizar Serie Completa", command=self._render_series,
+                                               font=("JetBrains Mono", 12, "bold"), fg_color=COLORS["accent_green"], hover_color="#00A23D", text_color="#000000", height=40)
+        self.btn_render_series.pack(fill="x", padx=10, pady=(0, 10))
+
+        # ── PANEL DERECHO: Editores Dinámicos (CTkTabview) ──
+        right_panel = ctk.CTkFrame(self.tab2, fg_color=COLORS["bg_panel"], corner_radius=10,
+                                   border_width=1, border_color=COLORS["border"])
+        right_panel.grid(row=0, column=1, sticky="nsew", padx=(0, 6), pady=6)
+        right_panel.grid_rowconfigure(1, weight=1)
+        right_panel.grid_columnconfigure(0, weight=1)
+
+        rh = ctk.CTkFrame(right_panel, fg_color=COLORS["header_bg"], height=40, corner_radius=0)
+        rh.grid(row=0, column=0, sticky="ew")
+        rh.grid_propagate(False)
+        ctk.CTkLabel(rh, text="📝", font=("Arial", 18)).pack(side="left", padx=(12, 4))
+        ctk.CTkLabel(rh, text="EDITORES DE CAPÍTULOS", font=("JetBrains Mono", 12, "bold"),
+                     text_color=COLORS["accent_yellow"]).pack(side="left")
+
+        # Tabview
+        self.chapters_tabview = ctk.CTkTabview(
+            right_panel,
+            fg_color=COLORS["bg_dark"],
+            segmented_button_fg_color=COLORS["bg_panel"],
+            segmented_button_selected_color=COLORS["accent_cyan"],
+            segmented_button_selected_hover_color="#00b8d4",
+            segmented_button_unselected_color=COLORS["bg_dark"],
+            segmented_button_unselected_hover_color="#2a2b3e",
+            text_color=COLORS["text_primary"],
+            corner_radius=8
+        )
+        self.chapters_tabview.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+        
+        # ── LOG DEL ORQUESTADOR (muestra progreso TTS y generación) ──
+        orch_log_header = ctk.CTkFrame(right_panel, fg_color=COLORS["header_bg"], height=28, corner_radius=0)
+        orch_log_header.grid(row=2, column=0, sticky="ew", padx=6, pady=(4, 0))
+        ctk.CTkLabel(orch_log_header, text="📋 LOG DEL ORQUESTADOR",
+                     font=("JetBrains Mono", 10, "bold"),
+                     text_color=COLORS["accent_cyan"]).pack(side="left", padx=8, pady=3)
+        ctk.CTkButton(orch_log_header, text="🗑 Limpiar",
+                      command=lambda: (self.orch_log_box.configure(state="normal"),
+                                       self.orch_log_box.delete("1.0", "end"),
+                                       self.orch_log_box.configure(state="disabled")),
+                      fg_color="transparent", hover_color="#2a2b3e",
+                      font=("JetBrains Mono", 9), height=22, width=70).pack(side="right", padx=4, pady=2)
+
+        self.orch_log_box = ctk.CTkTextbox(
+            right_panel,
+            font=("JetBrains Mono", 10),
+            fg_color="#080810",
+            text_color="#CCCCCC",
+            border_color=COLORS["border"],
+            border_width=1,
+            height=120,
+            state="disabled",
+            wrap="word",
+        )
+        self.orch_log_box.grid(row=3, column=0, sticky="ew", padx=6, pady=(0, 4))
+
+        # Botones de Lanzar Capítulo Individual
+        chap_btn_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
+        chap_btn_frame.grid(row=4, column=0, sticky="ew", padx=6, pady=(0, 6))
+        
+        self.btn_chap_duo = ctk.CTkButton(chap_btn_frame, text="🎭 Lanzar Cap (Duo)", command=lambda: self._launch_director(auto_record=False, is_solo=False), font=("JetBrains Mono", 11, "bold"), fg_color=COLORS["accent_yellow"], text_color="#000000", hover_color="#CBAA00")
+        self.btn_chap_duo.pack(side="left", padx=(0, 5), expand=True, fill="x")
+
+        self.btn_chap_solo = ctk.CTkButton(chap_btn_frame, text="🖥️ Lanzar Cap (Solo)", command=lambda: self._launch_director(auto_record=False, is_solo=True), font=("JetBrains Mono", 11, "bold"), fg_color=COLORS["accent_cyan"], text_color="#1a1a2e", hover_color="#4361EE")
+        self.btn_chap_solo.pack(side="left", padx=5, expand=True, fill="x")
+        
+        self.btn_chap_tts = ctk.CTkButton(chap_btn_frame, text="🔊 TTS Cap", command=self.generate_audios_for_chapter, font=("JetBrains Mono", 11, "bold"), fg_color="#E040FB", hover_color="#AA00FF")
+        self.btn_chap_tts.pack(side="left", padx=5, expand=True, fill="x")
+        
+        self.btn_chap_stop = ctk.CTkButton(chap_btn_frame, text="⏹", command=self.stop_director, font=("Arial", 14), fg_color="#e74c3c", hover_color="#c0392b", text_color="#ffffff", width=40, state="disabled")
+        self.btn_chap_stop.pack(side="right")
+
+        # Pestaña placeholder
+        welcome_tab = self.chapters_tabview.add("Bienvenido")
+        welcome_lbl = tk.Label(welcome_tab, text="Genera la estructura maestra para crear las pestañas de capítulos.",
+                               bg=COLORS["bg_dark"], fg=COLORS["text_dim"], font=("JetBrains Mono", 11))
+        welcome_lbl.pack(expand=True)
+
+        self.chapter_editors = {} # Almacena ref a los tk.Text de cada pestaña
+        self.chapter_widgets = [] # Almacena ref a los frames de la lista izquierda
+      
+    def _generate_master_structure(self):
+        topic = self.series_topic_entry.get().strip()
+        if not topic:
+            self.append_chat("Error", "⚠️ Debes ingresar un Tema Principal para la Serie.")
+            return
+
+        try:
+            num_chapters = int(self.series_chapters_var.get())
+        except ValueError:
+            num_chapters = 5
+
+        self.btn_generate_master.configure(state="disabled", text="⏳ Generando...")
+        self.series_orchestrator.ai = self.ai # Asegurar inyección
+
+        def on_success(json_data):
+            self.after(0, self._render_master_structure_ui, json_data)
+        
+        def on_error(msg):
+            self.after(0, self.append_chat, "Error", f"❌ Error generando estructura: {msg}")
+            self.after(0, lambda: self.btn_generate_master.configure(state="normal", text="✨ Generar Estructura"))
+            
+        mode = getattr(self, "orchestrator_mode_var", self.pre_mode_var).get()
+        aspect = getattr(self, "orchestrator_format_var", ctk.StringVar(value="16:9 (YouTube)")).get()
+        self.series_orchestrator.generate_master_structure(topic, num_chapters, mode, aspect, on_success, on_error)
+
+    def _render_master_structure_ui(self, json_data):
+        self.btn_generate_master.configure(state="normal", text="✨ Re-Generar")
+        self.append_chat("Sistema", f"✅ Estructura Maestra '{json_data.get('titulo_serie', '')}' generada con éxito.")
+
+        # Limpiar lista anterior
+        for w in self.chapter_widgets:
+            w.destroy()
+        self.chapter_widgets.clear()
+        
+        # Limpiar tabs anteriores (excepto Bienvenido)
+        try:
+            self.chapters_tabview.delete("Bienvenido")
+        except:
+            pass
+            
+        for name in list(self.chapter_editors.keys()):
+            try:
+                self.chapters_tabview.delete(name)
+            except:
                 pass
+        self.chapter_editors.clear()
 
-    def _safe_destroy_render_win(self):
-        """Destruye la ventana de progreso de render de forma segura."""
-        try:
-            if hasattr(self, "_render_win") and self._render_win and self._render_win.winfo_exists():
-                self.after(0, self._render_win.destroy)
-        except Exception:
-            pass
+        # Popular panel izquierdo
+        capitulos = json_data.get("capitulos", [])
+        for cap in capitulos:
+            nro = cap.get("nro", "?")
+            titulo = cap.get("titulo", "Sin Título")
+            
+            frame = ctk.CTkFrame(self.chapters_list_frame, fg_color=COLORS["bg_panel"], corner_radius=6)
+            frame.pack(fill="x", pady=2)
+            self.chapter_widgets.append(frame)
+            
+            ctk.CTkLabel(frame, text=f"Cap. {nro}", font=("JetBrains Mono", 11, "bold"), text_color=COLORS["accent_cyan"], width=50).pack(side="left", padx=5)
+            # Acortar título muy largo
+            display_title = titulo[:30] + "..." if len(titulo) > 30 else titulo
+            ctk.CTkLabel(frame, text=display_title, font=("JetBrains Mono", 10), text_color=COLORS["text_primary"]).pack(side="left", fill="x", expand=True)
+            
+            # Botón Generar JSON del capítulo
+            btn_gen = ctk.CTkButton(frame, text="⚡", width=30, height=24, font=("Arial", 14),
+                                    fg_color="#F39C12", hover_color="#D68910", text_color="#000000")
+            btn_gen.configure(command=lambda c=cap, b=btn_gen: self._generate_chapter_json(c, b))
+            btn_gen.pack(side="right", padx=5, pady=4)
+            
+            # Crear pestaña por capítulo
+            tab_name = f"Cap {nro}"
+            tab = self.chapters_tabview.add(tab_name)
+            
+            # Editor tk.Text
+            editor = tk.Text(tab, bg="#08090a", fg="#a0ffa0", font=("JetBrains Mono", 10),
+                             insertbackground=COLORS["accent_green"], selectbackground="#1a3a1a",
+                             relief="flat", bd=0, wrap="word", highlightthickness=0, padx=8, pady=4, undo=True)
+            editor.pack(fill="both", expand=True)
+            
+            # Apply Syntax highlighting tags
+            editor.tag_config("json_key", foreground="#9CDCFE")
+            editor.tag_config("json_string", foreground="#CE9178")
+            editor.tag_config("json_bracket", foreground="#FFD700")
+            editor.tag_config("json_keyword", foreground="#C586C0")
+            editor.tag_config("json_colon", foreground="#D4D4D4")
+            editor.tag_config("json_number", foreground="#B5CEA8")
+            
+            self.chapter_editors[tab_name] = editor
 
-    def _re_enable_render_btn(self):
-        """Re-habilita el botón de exportar (llamado desde el main thread)."""
-        try:
-            self.btn_manual_render.configure(state="normal")
-        except Exception:
-            pass
+    def _generate_chapter_json(self, chapter_data, button):
+        button.configure(state="disabled", fg_color="#7F8C8D")
+        nro = chapter_data.get("nro", "?")
+        self.append_chat("Sistema", f"⏳ Generando código para Capítulo {nro}...")
+        
+        target_ip = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
+        
+        def on_success(n, json_array, saved_path):
+            self.after(0, self._render_chapter_json_ui, n, json_array, button)
+            
+        def on_error(n, msg):
+            self.after(0, self.append_chat, "Error", f"❌ Error Cap {n}: {msg}")
+            self.after(0, lambda: button.configure(state="normal", fg_color="#F39C12"))
+
+        mode = getattr(self, "orchestrator_mode_var", self.pre_mode_var).get()
+        aspect = getattr(self, "orchestrator_format_var", ctk.StringVar(value="16:9 (YouTube)")).get()
+        self.series_orchestrator.generate_chapter_json(target_ip, chapter_data, mode, aspect, on_success, on_error)
+
+    def _render_chapter_json_ui(self, nro, json_array, button):
+        button.configure(state="normal", fg_color=COLORS["accent_green"], text="✅")
+        self.append_chat("Sistema", f"✅ Código para Capítulo {nro} generado.")
+        
+        tab_name = f"Cap {nro}"
+        if tab_name in self.chapter_editors:
+            editor = self.chapter_editors[tab_name]
+            editor.delete("1.0", "end")
+            editor.insert("end", json.dumps(json_array, indent=4, ensure_ascii=False))
+            try:
+                self.chapters_tabview.set(tab_name)
+            except:
+                pass
+                
+    def _render_series(self):
+        target_ip = self.target_combo.get() if hasattr(self, 'target_combo') else "scanme.nmap.org"
+        
+        if not self.wid_a or not self.wid_b:
+            self.append_chat("Error", "❌ Falta al menos una de las terminales. Dale click a Lanzar primero o espera a que esten disponibles.")
+            return
+
+        def on_progress(msg):
+            self.after(0, self.append_chat, "Sistema", msg)
+
+        def on_finish(msg):
+            self.after(0, self.append_chat, "Sistema", msg)
+            self.after(0, lambda: self.btn_render_series.configure(state="normal", text="🎬 Renderizar Serie Completa"))
+
+        def on_error(msg):
+            self.after(0, self.append_chat, "Error", msg)
+            self.after(0, lambda: self.btn_render_series.configure(state="normal", text="🎬 Renderizar Serie Completa"))
+
+        self.append_chat("Sistema", "🎬 Iniciando renderizado secuencial de la serie...")
+        self.btn_render_series.configure(state="disabled", text="⏳ Renderizando...")
+        
+        mode = getattr(self, "orchestrator_mode_var", self.pre_mode_var).get()
+        aspect = getattr(self, "orchestrator_format_var", ctk.StringVar(value="16:9 (YouTube)")).get()
+        
+        # Necesitamos instanciar un _auto_thread que llame al orchestrator en lugar del codigo legacy
+        self.series_orchestrator.process_series_loop(self, target_ip, mode, aspect, on_progress, on_finish, on_error)
+
 
     def _on_speed_change(self, value):
         self.typing_speed_pct = int(value)
@@ -2090,34 +1798,65 @@ class MainWindow(ctk.CTkFrame):
                 self.after(0, self.append_chat, "Sistema", "⚠ Konsoles abiertas pero sin WID detectado.")
                 return
 
-            # Obtener formato seleccionado
-            formato = self.format_combo.get()
-            if "16:9" in formato:
-                # 16:9 Horizontal
-                geometry = "0,-1,-1,960,540"
-                desc_formato = "960x540 (16:9)"
-            else:
-                # 9:16 Vertical
-                geometry = "0,-1,-1,450,800"
-                desc_formato = "450x800 (9:16)"
-
-            # Redimensionar y posicionar
-            wids_to_resize = [self.wid_b] if is_solo else ([self.wid_a, self.wid_b] if self.wid_a != self.wid_b else [self.wid_a])
-            for wid in wids_to_resize:
-                if wid:
-                    hex_wid = hex(int(wid))
-                    sp.run(['wmctrl', '-i', '-r', hex_wid, '-e', geometry],
-                           capture_output=True, timeout=5)
+            # ─── Geometría según modo ───
+            # Obtener tamaño de pantalla
+            try:
+                screen_w = int(sp.run(['xdotool', 'getdisplaygeometry'], capture_output=True, text=True).stdout.split()[0])
+                screen_h = int(sp.run(['xdotool', 'getdisplaygeometry'], capture_output=True, text=True).stdout.split()[1])
+            except Exception:
+                screen_w, screen_h = 1920, 1080
 
             if is_solo:
+                # SOLO TERM: Terminal B
+                # Usar resize dentro de la terminal para tamaño exacto en caracteres
+                if self.wid_b:
+                    format_val = self._get_active_format()
+                    if "9:16" in format_val:
+                        sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'resize -s 40 60'],
+                               capture_output=True, timeout=5)
+                        geo_text = "60x40 (exacto) — Modo Reels"
+                    else:
+                        sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'resize -s 30 110'],
+                               capture_output=True, timeout=5)
+                        geo_text = "110x30 (exacto) — Modo YouTube"
+                        
+                    sp.run(['xdotool', 'key', '--window', self.wid_b, 'Return'],
+                           capture_output=True, timeout=5)
+                    time.sleep(0.5)
+                    sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'clear'],
+                           capture_output=True, timeout=5)
+                    sp.run(['xdotool', 'key', '--window', self.wid_b, 'Return'],
+                           capture_output=True, timeout=5)
+
                 self.after(0, self.append_chat, "Sistema",
                            f"✅ Terminal B (WID: {self.wid_b}) — Ejecución\n"
-                           f"Ajustada a {desc_formato}. Configura OBS con 'Terminal-B'")
+                           f"Tamaño: {geo_text}\n"
+                           f"Configura OBS con 'Terminal-B'")
             else:
+                # DUAL AI: Dividir pantalla 50/50 horizontal (para YouTube)
+                half_w = screen_w // 2
+                term_h = screen_h - 40  # Margen para panel de tareas
+
+                # Terminal A: mitad izquierda
+                geo_a = f"0,0,0,{half_w},{term_h}"
+                # Terminal B: mitad derecha
+                geo_b = f"0,{half_w},0,{half_w},{term_h}"
+
+                if self.wid_a and self.wid_a != self.wid_b:
+                    hex_a = hex(int(self.wid_a))
+                    sp.run(['wmctrl', '-i', '-r', hex_a, '-e', geo_a],
+                           capture_output=True, timeout=5)
+                if self.wid_b:
+                    hex_b = hex(int(self.wid_b))
+                    sp.run(['wmctrl', '-i', '-r', hex_b, '-e', geo_b],
+                           capture_output=True, timeout=5)
+
+                desc_formato = f"{half_w}x{term_h} cada una (50/50)"
                 self.after(0, self.append_chat, "Sistema",
-                           f"✅ Terminal A (WID: {self.wid_a}) — KR-CLIDN\n"
-                           f"✅ Terminal B (WID: {self.wid_b}) — Ejecución\n"
-                           f"Ambas a {desc_formato}. Configura OBS con 2 escenas:\n"
+                           f"✅ Terminal A (WID: {self.wid_a}) — KR-CLIDN [Izquierda]\n"
+                           f"✅ Terminal B (WID: {self.wid_b}) — Ejecución [Derecha]\n"
+                           f"Pantalla dividida: {desc_formato} — Modo YouTube\n"
+                           f"Configura OBS con 2 escenas:\n"
                            f"  Scene 'Terminal-A' → captura Terminal A\n"
                            f"  Scene 'Terminal-B' → captura Terminal B")
 
@@ -2491,63 +2230,217 @@ class MainWindow(ctk.CTkFrame):
         threading.Thread(target=self._generate_audios_thread,
                          args=(json_data,), daemon=True).start()
 
-    def _generate_audios_thread(self, json_data: list):
-        audio_engine = AudioEngine()
-        total = len(json_data)
-        errores = 0
-        
-        mode = self.pre_mode_var.get() if self.pre_mode_var else "DUAL AI"
-        is_solo = (mode == "SOLO TERM")
-        if is_solo:
-            os.makedirs(os.path.join(self.workspace_dir, "audio_solo"), exist_ok=True)
+    def generate_audios_for_chapter(self):
+        json_data = self._parse_editor_json()
+        if json_data is None:
+            return
 
+        try:
+            tab_name = self.chapters_tabview.get()
+        except Exception:
+            tab_name = "cap_unknown"
+
+        # ── Construir ruta de audio junto al JSON del capítulo ──
+        # Truncar topic a 40 chars para evitar [Errno 36] File name too long
+        topic_raw = self.series_topic_entry.get().strip() or "serie_generica"
+        topic_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", topic_raw)[:40].strip("_") or "serie"
+
+        # Obtener series_dir real del orquestador si existe, sino construir
+        series_dir = getattr(self.series_orchestrator, "_series_dir", None)
+        if not series_dir:
+            series_dir = os.path.join(self.workspace_dir, "projects", topic_safe)
+
+        tab_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", tab_name.lower())
+        # Audios van DENTRO de la carpeta del capítulo: series_dir/cap_1/audio/
+        output_dir = os.path.join(series_dir, tab_safe, "audio")
+        os.makedirs(output_dir, exist_ok=True)
+
+        self.btn_chap_tts.configure(state="disabled")
+        # Log va al chat principal Y al panel orquestador
+        msg = f"🔊 Compilando audios TTS para {tab_name}... → {output_dir}"
+        self.append_chat("Sistema", msg)
+        self._orch_log("Sistema", msg)
+        threading.Thread(target=self._generate_audios_thread_orch,
+                         args=(json_data, output_dir, tab_name, self.btn_chap_tts),
+                         daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────
+    #  LOG DEDICADO DEL ORQUESTADOR
+    # ─────────────────────────────────────────────────────────────
+
+    def _orch_log(self, sender: str, message: str):
+        """
+        Muestra un mensaje en el panel de log del orquestador (self.orch_log_box).
+        Igual que append_chat pero en el widget del orquestador.
+        Si no existe el widget, solo usa append_chat (fallback).
+        """
+        if not hasattr(self, "orch_log_box"):
+            return
+        try:
+            import time as _t
+            ts = _t.strftime("%H:%M:%S")
+            COLORES_SENDER = {
+                "Sistema": "#00E5FF",
+                "TTS":     "#E040FB",
+                "Error":   "#FF5252",
+                "OK":      "#00E676",
+            }
+            color = COLORES_SENDER.get(sender, "#AAAAAA")
+            self.orch_log_box.configure(state="normal")
+            self.orch_log_box.insert("end", f"[{ts}] ", "ts")
+            self.orch_log_box.insert("end", f"{sender}: ", sender)
+            self.orch_log_box.insert("end", f"{message}\n", "msg")
+            self.orch_log_box.tag_config("ts",  foreground="#555577")
+            self.orch_log_box.tag_config(sender, foreground=color, font=("JetBrains Mono", 10, "bold"))
+            self.orch_log_box.tag_config("msg", foreground="#CCCCCC", font=("JetBrains Mono", 10))
+            self.orch_log_box.see("end")
+            self.orch_log_box.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _generate_audios_thread_orch(self, json_data: list, output_dir: str,
+                                      tab_name: str, btn_to_restore=None):
+        """
+        Versión del thread TTS para el orquestador.
+        Loguea tanto en append_chat como en _orch_log para máxima visibilidad.
+        """
         import hashlib
+        audio_engine = AudioEngine()
+        total    = len(json_data)
+        errores  = 0
+        omitidos = 0
+
+        os.makedirs(output_dir, exist_ok=True)
 
         for idx, escena in enumerate(json_data):
-            voz = escena.get("voz", "")
+            voz_raw = escena.get("voz", "")
+            voz = self._voz_pronunciable(voz_raw)
             if not voz:
+                omitidos += 1
                 continue
-                
-            text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
-            
-            if is_solo:
-                path = os.path.join(self.workspace_dir, "audio_solo", f"audio_{idx}_{text_hash}.mp3")
-            else:
-                path = os.path.join(self.workspace_dir, f"audio_{idx}_{text_hash}.mp3")
-                
+
+            text_hash = hashlib.md5(voz.encode("utf-8")).hexdigest()[:8]
+            path = os.path.join(output_dir, f"audio_{idx:03d}_{text_hash}.wav")
+
             if os.path.exists(path):
-                self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — Cache [OK]")
+                msg = f"Audio {idx+1}/{total} [{tab_name}] — Cache ✓"
+                self.after(0, self.append_chat, "TTS", msg)
+                self.after(0, self._orch_log, "TTS", msg)
                 continue
 
             try:
                 dur = audio_engine.generar_audio(voz, path)
-                self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — {dur:.1f}s")
+                msg = f"Audio {idx+1}/{total} [{tab_name}] — {dur:.1f}s ✅"
+                self.after(0, self.append_chat, "TTS", msg)
+                self.after(0, self._orch_log, "TTS", msg)
             except Exception as e:
                 errores += 1
-                self.after(0, self.append_chat, "Error", f"❌ Info TTS {idx+1}: {e}")
+                msg = f"❌ TTS {idx+1} [{tab_name}]: {e}"
+                self.after(0, self.append_chat, "Error", msg)
+                self.after(0, self._orch_log, "Error", msg)
 
-        msg = "✅ Todos los audios listos." if errores == 0 else f"⚠ {errores} error(es)."
+        if errores == 0 and omitidos == 0:
+            final = f"✅ Todos los audios de {tab_name} listos → {output_dir}"
+        elif errores == 0:
+            final = f"✅ {tab_name} listo ({omitidos} sin texto omitidos) → {output_dir}"
+        else:
+            final = f"⚠ {tab_name}: {errores} errores, {omitidos} omitidos."
+
+        self.after(0, self.append_chat, "Sistema", final)
+        self.after(0, self._orch_log, "OK", final)
+        if btn_to_restore:
+            self.after(0, lambda: btn_to_restore.configure(state="normal"))
+
+    def _generate_audios_thread(self, json_data: list, override_dir: str = None, btn_to_restore = None):
+        """
+        Thread TTS para el guion principal (Tab 1).
+        - Usa _voz_pronunciable para filtrar texto vacío/emojis antes de llamar edge-tts
+        - Guarda junto al JSON del proyecto si override_dir está definido
+        - Progreso visible en chat principal
+        """
+        import hashlib
+        audio_engine = AudioEngine()
+        total    = len(json_data)
+        errores  = 0
+        omitidos = 0
+
+        for idx, escena in enumerate(json_data):
+            voz = self._voz_pronunciable(escena.get("voz", ""))
+            if not voz:
+                omitidos += 1
+                continue
+
+            text_hash = hashlib.md5(voz.encode("utf-8")).hexdigest()[:8]
+
+            if override_dir:
+                os.makedirs(override_dir, exist_ok=True)
+                path = os.path.join(override_dir, f"audio_{idx:03d}_{text_hash}.wav")
+            else:
+                mode    = self.pre_mode_var.get() if hasattr(self, "pre_mode_var") else "DUAL AI"
+                is_solo = (mode == "SOLO TERM")
+                if is_solo:
+                    d = os.path.join(self.workspace_dir, "audio_solo")
+                    os.makedirs(d, exist_ok=True)
+                    path = os.path.join(d, f"audio_{idx:03d}_{text_hash}.wav")
+                else:
+                    path = os.path.join(self.workspace_dir, f"audio_{idx:03d}_{text_hash}.wav")
+
+            if os.path.exists(path):
+                self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — Cache ✓")
+                continue
+
+            try:
+                dur = audio_engine.generar_audio(voz, path)
+                self.after(0, self.append_chat, "TTS", f"Audio {idx+1}/{total} — {dur:.1f}s ✅")
+            except Exception as e:
+                errores += 1
+                self.after(0, self.append_chat, "Error", f"❌ TTS {idx+1}: {e}")
+
+        if errores == 0 and omitidos == 0:
+            msg = "✅ Todos los audios listos."
+        elif errores == 0:
+            msg = f"✅ Audios listos ({omitidos} sin texto omitidos)."
+        else:
+            msg = f"⚠ {errores} error(es). {omitidos} omitidos."
         self.after(0, self.append_chat, "Sistema", msg)
-        self.after(0, lambda: self.btn_tts.configure(state="normal"))
+        btn = btn_to_restore if btn_to_restore else self.btn_tts
+        self.after(0, lambda: btn.configure(state="normal"))
 
     # ═══════════════════════════════════════════════
     # LANZAR KONSOLE + XDOTOOL
     # ═══════════════════════════════════════════════
 
+    def smart_launch(self):
+        """Lanzar JSON a la terminal — detecta modo (Solo/Dual) automáticamente."""
+        mode = self._get_active_mode()
+        if mode == "SOLO TERM":
+            self.ensure_terminals_open(lambda: self._launch_director(auto_record=False, is_solo=True), mode="solo")
+        else:
+            self.ensure_terminals_open(lambda: self._launch_director(auto_record=False, is_solo=False), mode="dual")
+
     def launch_konsole(self):
-        """Lanza la secuencia dual SIN grabación OBS."""
-        self.ensure_terminals_open(lambda: self._launch_director(auto_record=False), mode="dual")
+        """Alias de smart_launch para compatibilidad."""
+        self.smart_launch()
 
     def launch_and_record(self):
-        """Lanza la secuencia dual CON grabación OBS automática."""
-        self.ensure_terminals_open(lambda: self._launch_director(auto_record=True), mode="dual")
+        """Lanzar JSON + activar grabación OBS — detecta modo automáticamente."""
+        mode = self._get_active_mode()
+        if mode == "SOLO TERM":
+            self.ensure_terminals_open(lambda: self._launch_director(auto_record=True, is_solo=True), mode="solo")
+        else:
+            self.ensure_terminals_open(lambda: self._launch_director(auto_record=True, is_solo=False), mode="dual")
 
-    def _launch_director(self, auto_record=False):
+    def _launch_director(self, auto_record=False, is_solo=None):
+        """Lanza el Director según el modo detectado."""
         json_data = self._parse_editor_json()
         if json_data is None:
             return
 
-        is_solo = getattr(self, "_active_tab", "a") == "b"
+        # Determinar modo si no se pasó explícitamente
+        if is_solo is None:
+            mode = self._get_active_mode()
+            is_solo = (mode == "SOLO TERM")
+
         mode_name = "SOLO" if is_solo else "DUAL"
         mode_txt = "+ OBS GRABANDO" if auto_record else "sin grabación"
         
@@ -2556,6 +2449,11 @@ class MainWindow(ctk.CTkFrame):
         self.btn_record.configure(state="disabled")
         self.btn_solo.configure(state="disabled")
         self.btn_dynamic.configure(state="disabled")
+        
+        if hasattr(self, 'btn_chap_duo'):
+            self.btn_chap_duo.configure(state="disabled")
+            self.btn_chap_solo.configure(state="disabled")
+            self.btn_chap_stop.configure(state="normal")
 
         if is_solo:
             from kr_studio.core.solo_director import SoloDirectorEngine
@@ -2578,13 +2476,15 @@ class MainWindow(ctk.CTkFrame):
             self._active_director.obs.password = self._load_env_value("OBS_PASSWORD", "")
 
             if not auto_record:
-                # Desactivar OBS para modo sin grabación
                 self._active_director.obs = type('MockOBS', (), {'connect': lambda s: False, 'connected': False})()
 
-            # Pasar referencia del widget flotante ANTES de iniciar
             self._active_director.floating_ctrl = self._floating_ctrl
 
         self._active_director.start()
+
+        # Re-forzar tamaño de terminal después de 1.5s y 3s (Konsole tiende a resetear)
+        self.after(1500, self._reinforce_terminal_size)
+        self.after(3000, self._reinforce_terminal_size)
 
         # Activar botón Detener, desactivar Lanzar/Grabar
         self.btn_stop.configure(state="normal")
@@ -2595,17 +2495,87 @@ class MainWindow(ctk.CTkFrame):
         self.after(timeout_ms, lambda: self.btn_record.configure(state="normal"))
         self.after(timeout_ms, lambda: self.btn_solo.configure(state="normal"))
         self.after(timeout_ms, lambda: self.btn_dynamic.configure(state="normal"))
+        
+        if hasattr(self, 'btn_chap_duo'):
+            self.after(timeout_ms, lambda: self.btn_chap_duo.configure(state="normal"))
+            self.after(timeout_ms, lambda: self.btn_chap_solo.configure(state="normal"))
+            self.after(timeout_ms, lambda: self.btn_chap_stop.configure(state="disabled"))
 
     def stop_director(self):
-        """Detiene la secuencia del Director inmediatamente."""
+        """Detiene la secuencia del Director y mata procesos en la terminal."""
+        import subprocess as sp
+        
         if self._active_director and self._active_director.is_running:
             self._active_director.stop()
-            self.append_chat("Sistema", "⏹ Secuencia detenida por el usuario.")
+            self.append_chat("Sistema", "⏹ Secuencia detenida.")
+
+        # Enviar Ctrl+C a las terminales para matar procesos activos
+        try:
+            if self.wid_b:
+                sp.run(['xdotool', 'key', '--window', self.wid_b, 'ctrl+c'],
+                       capture_output=True, timeout=3)
+                time.sleep(0.2)
+                sp.run(['xdotool', 'key', '--window', self.wid_b, 'ctrl+c'],
+                       capture_output=True, timeout=3)
+            if self.wid_a and self.wid_a != self.wid_b:
+                sp.run(['xdotool', 'key', '--window', self.wid_a, 'ctrl+c'],
+                       capture_output=True, timeout=3)
+        except Exception:
+            pass
+
+        self.append_chat("Sistema", "✅ Terminales listas para relanzar.")
         self.btn_stop.configure(state="disabled")
         self.btn_launch.configure(state="normal")
         self.btn_record.configure(state="normal")
         self.btn_solo.configure(state="normal")
         self.btn_dynamic.configure(state="normal")
+        
+        if hasattr(self, 'btn_chap_stop'):
+            self.btn_chap_stop.configure(state="disabled")
+            self.btn_chap_duo.configure(state="normal")
+            self.btn_chap_solo.configure(state="normal")
+        
+        # Resetear widget flotante
+        if self._floating_ctrl:
+            self._floating_ctrl._set_idle()
+
+    def _reinforce_terminal_size(self):
+        """Re-fuerza el tamaño de la terminal para evitar que Konsole lo resetee."""
+        import subprocess as sp
+        try:
+            mode = self._get_active_mode()
+            is_solo = (mode == "SOLO TERM")
+
+            if is_solo and self.wid_b:
+                # Usar resize directamente dentro de la terminal
+                format_val = self._get_active_format()
+                if "9:16" in format_val:
+                    sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'resize -s 40 60'],
+                           capture_output=True, timeout=5)
+                else:
+                    sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'resize -s 30 110'],
+                           capture_output=True, timeout=5)
+                sp.run(['xdotool', 'key', '--window', self.wid_b, 'Return'],
+                       capture_output=True, timeout=5)
+                import time
+                time.sleep(0.3)
+                sp.run(['xdotool', 'type', '--window', self.wid_b, '--delay', '15', 'clear'],
+                       capture_output=True, timeout=5)
+                sp.run(['xdotool', 'key', '--window', self.wid_b, 'Return'],
+                       capture_output=True, timeout=5)
+            elif not is_solo:
+                screen_w = int(sp.run(['xdotool', 'getdisplaygeometry'], capture_output=True, text=True).stdout.split()[0])
+                screen_h = int(sp.run(['xdotool', 'getdisplaygeometry'], capture_output=True, text=True).stdout.split()[1])
+                half_w = screen_w // 2
+                term_h = screen_h - 40
+                if self.wid_a and self.wid_a != self.wid_b:
+                    sp.run(['wmctrl', '-i', '-r', hex(int(self.wid_a)), '-e', f'0,0,0,{half_w},{term_h}'],
+                           capture_output=True, timeout=5)
+                if self.wid_b:
+                    sp.run(['wmctrl', '-i', '-r', hex(int(self.wid_b)), '-e', f'0,{half_w},0,{half_w},{term_h}'],
+                           capture_output=True, timeout=5)
+        except Exception:
+            pass
 
     # ═══════════════════════════════════════════════
     # SISTEMA DE PROYECTOS
@@ -2692,14 +2662,38 @@ class MainWindow(ctk.CTkFrame):
     # UTILIDADES
     # ═══════════════════════════════════════════════
 
+    def _get_active_mode(self):
+        current_main_tab = getattr(self, "tabview", None)
+        if current_main_tab and current_main_tab.get() == "🎬 Orquestador de Series":
+            return self.orchestrator_mode_var.get() if hasattr(self, 'orchestrator_mode_var') else "DUAL AI"
+        return self.pre_mode_var.get() if hasattr(self, 'pre_mode_var') else "DUAL AI"
+
+    def _get_active_format(self):
+        current_main_tab = getattr(self, "tabview", None)
+        if current_main_tab and current_main_tab.get() == "🎬 Orquestador de Series":
+            return self.orchestrator_format_var.get() if hasattr(self, 'orchestrator_format_var') else "9:16"
+        return "9:16"
+
+
     def _parse_editor_json(self):
-        # El tab activo se guarda en self._active_tab ("a" o "b")
-        if getattr(self, "_active_tab", "a") == "b":
-            json_str = self.editor_b.get("1.0", "end").strip()
-            editor_name = "Terminal B"
+        # Detectar si estamos en el Orquestador
+        current_main_tab = self.tabview.get()
+        if current_main_tab == "🎬 Orquestador de Series":
+            current_chapter_tab = self.chapters_tabview.get()
+            if current_chapter_tab in self.chapter_editors:
+                json_str = self.chapter_editors[current_chapter_tab].get("1.0", "end").strip()
+                editor_name = f"Orquestador ({current_chapter_tab})"
+            else:
+                self.append_chat("Sistema", "⚠ No hay ningún capítulo seleccionado en el Orquestador.")
+                return None
         else:
-            json_str = self.editor.get("1.0", "end").strip()
-            editor_name = "Terminal A"
+            # El tab activo se guarda en self._active_tab ("a" o "b")
+            if getattr(self, "_active_tab", "a") == "b":
+                json_str = self.editor_b.get("1.0", "end").strip()
+                editor_name = "Terminal B"
+            else:
+                json_str = self.editor.get("1.0", "end").strip()
+                editor_name = "Terminal A"
 
         if not json_str:
             self.append_chat("Sistema", f"⚠ El editor de {editor_name} está vacío.")

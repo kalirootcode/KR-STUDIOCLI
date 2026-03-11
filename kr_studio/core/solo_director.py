@@ -74,9 +74,10 @@ Si tiene_error=true, incluye un comando_corregido y explicacion_error."""
 class SoloDirectorEngine:
     """Director Solo — usa SOLO Terminal B. Flujo adaptativo."""
 
-    def __init__(self, main_app, topic: str, duration_min: int, workspace_dir: str):
+    def __init__(self, main_app, topic: str, duration_min: int, workspace_dir: str, aspect_ratio: str = "16:9 (YouTube)"):
         self.app = main_app
         self.topic = topic
+        self.aspect_ratio = aspect_ratio
         self.duration_min = max(1, min(30, duration_min))
         self.workspace_dir = workspace_dir
         self.tts = TTSEngine(workspace_dir, "audio_solo")
@@ -101,13 +102,17 @@ class SoloDirectorEngine:
         }
         self._start_wall = 0.0
 
+        from kr_studio.core.x11_controller import X11Controller
+        self.x11 = X11Controller()
+
     def start(self):
         self.is_running = True
         try:
             self._log("Debug", f"SoloDirectorEngine.start() llamado. json_data existe: {self.json_data is not None}")
             if self.json_data:
                 self._log("Debug", f"Scenes in json_data: {len(self.json_data)}")
-            open(LOG_TERMINAL_B, 'w').close()
+            with open(LOG_TERMINAL_B, 'w'):
+                pass
         except Exception:
             pass
         threading.Thread(target=self._run_solo_sequence, daemon=True).start()
@@ -115,51 +120,56 @@ class SoloDirectorEngine:
     def stop(self):
         self.is_running = False
         self.tts.stop_current()
+        # Enviar Ctrl+C a Terminal B para matar procesos activos
+        if self.wid_b:
+            try:
+                subprocess.run(['xdotool', 'key', '--window', self.wid_b, 'ctrl+c'],
+                               capture_output=True, timeout=3)
+                time.sleep(0.3)
+                subprocess.run(['xdotool', 'key', '--window', self.wid_b, 'ctrl+c'],
+                               capture_output=True, timeout=3)
+            except Exception:
+                pass
 
     # ─── X11 Utils ───
 
     def _focus_window(self, wid: str):
-        try:
-            subprocess.run(['xdotool', 'windowactivate', '--sync', wid],
-                           capture_output=True, timeout=5)
-            time.sleep(0.3)
-        except Exception:
-            pass
+        self.x11.focus_window(wid)
 
     def _type_text(self, wid: str, text: str, delay_ms: int = None):
-        # Leer la variable de hilo seguro (%)
-        try:
-            speed_pct = int(self.app.typing_speed_pct) if hasattr(self.app, 'typing_speed_pct') else 100
-        except Exception:
-            speed_pct = 100
-            
-        # Fórmula más agresiva: 100% = 120ms. Menos % = mucho más delay.
-        if speed_pct < 100:
-            calculated_delay = int(120 + (100 - speed_pct) * 4)  # ej: 50% = 320ms
-        else:
-            calculated_delay = max(5, int(120 - (speed_pct - 100)))  # ej: 200% = 20ms
-        
-        delay = delay_ms if delay_ms is not None else calculated_delay
-        self._focus_window(wid)
-        try:
-            subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', str(delay), text],
-                           capture_output=True, text=True, timeout=120)
-        except Exception as e:
-            self._log("Error", f"xdotool type: {e}")
+        speed = getattr(self.app, 'typing_speed_pct', 80) if hasattr(self, 'app') else 80
+        self.x11.type_text(wid, text, speed, delay_ms)
 
     def _send_key(self, wid: str, key: str):
-        self._focus_window(wid)
-        try:
-            subprocess.run(['xdotool', 'key', '--clearmodifiers', key],
-                           capture_output=True, text=True, timeout=5)
-        except Exception:
-            pass
+        self.x11.send_key(wid, key)
 
-    def _resize_window(self, wid: str, w=450, h=800):
+    def _resize_window(self, wid: str):
+        """Redimensiona Terminal B al Aspect Ratio seleccionado."""
         try:
-            subprocess.run(['wmctrl', '-i', '-r', hex(int(wid)), '-e', f'0,-1,-1,{w},{h}'],
-                           capture_output=True, timeout=5)
-        except Exception:
+            self._focus_window(wid)
+            # Primero des-maximizamos la ventana para poder aplicar un resize manual si se ocupa
+            subprocess.run(['wmctrl', '-i', '-r', wid, '-b', 'remove,fullscreen'], capture_output=True)
+            subprocess.run(['wmctrl', '-i', '-r', wid, '-b', 'remove,maximized_vert,maximized_horz'], capture_output=True)
+            time.sleep(0.2)
+            
+            if "9:16" in getattr(self, "aspect_ratio", ""):
+                # Vertical para Reels/TikTok (1080x1920 eq, usaremos 450x800 como preview visual)
+                subprocess.run(['wmctrl', '-i', '-r', wid, '-e', '0,-1,-1,480,850'], capture_output=True)
+                time.sleep(0.3)
+                # Forzamos dimensiones en columnas y filas para evitar wrap raro (45 cols, 40 filas)
+                subprocess.run(['xdotool', 'type', '--window', wid, '--delay', '20', 'resize -s 40 45'], capture_output=True)
+                subprocess.run(['xdotool', 'key', '--window', wid, 'Return'], capture_output=True)
+            else:
+                # Horizontal para YouTube (16:9)
+                subprocess.run(['wmctrl', '-i', '-r', wid, '-b', 'add,maximized_vert,maximized_horz'], capture_output=True)
+                time.sleep(0.3)
+                
+            time.sleep(0.5)
+            # Limpiamos todo texto residual
+            subprocess.run(['xdotool', 'type', '--window', wid, '--delay', '20', 'clear'], capture_output=True)
+            subprocess.run(['xdotool', 'key', '--window', wid, 'Return'], capture_output=True)
+            time.sleep(0.3)
+        except Exception as e:
             pass
 
     def _log(self, sender: str, msg: str):
@@ -311,15 +321,34 @@ class SoloDirectorEngine:
             self._log("Debug", "Tomando ruta de EJECUCIÓN LINEAL DE JSON")
             self._flog(f"Iniciando guion: {len(self.json_data)} escenas", "info")
             total = len(self.json_data)
-            for i, escena in enumerate(self.json_data):
-                if not self.is_running:
-                    break
+            i = 0
+            while i < total and self.is_running:
+                escena = self.json_data[i]
                 
                 self.current_cycle = i + 1
                 if self.floating_ctrl:
                     self.floating_ctrl.set_progress(self.current_cycle, total)
+                    self.floating_ctrl.set_scene_info(self.current_cycle, total)
+                    
+                # Verificar salto pendiente
+                jump_to = self.floating_ctrl.consume_jump() if self.floating_ctrl else -1
+                if jump_to >= 0:
+                    i = jump_to
+                    continue
+                    
+                # Verificar skip
+                if self.floating_ctrl and self.floating_ctrl.consume_skip():
+                    i += 1
+                    continue
                 
                 self._ejecutar_escena_json(escena, i)
+                
+                # Verificar retry
+                if self.floating_ctrl and self.floating_ctrl.consume_retry():
+                    self.floating_ctrl.add_log(f"↺ Reintentando escena {i+1}", "wait")
+                    continue
+                    
+                i += 1
             
             self._log("Director", "✅ Secuencia completada. Revisar logs detallados.")
             
@@ -361,10 +390,35 @@ class SoloDirectorEngine:
                 self.timestamps["narracion"] = self.timestamps.get("narracion", [])
                 self.timestamps["narracion"].append(round(rel_time, 2))
                 
-                # Calcular pausa baseada en cantidad de palabras (aprox 2.5 palabras por segundo)
-                num_words = len(voz.split())
-                calculated_delay = max(1.5, num_words / 2.5)
-                time.sleep(calculated_delay)
+                # Generar/medir audio real para sincronización precisa
+                import hashlib
+                from kr_studio.core.audio_engine import AudioEngine
+                text_hash = hashlib.md5(voz.encode('utf-8')).hexdigest()[:8]
+                
+                # Resolver directorio de audio desde WorkspaceManager si está disponible
+                try:
+                    wm = getattr(self.app, 'workspace_manager', None)
+                    active_session = wm.get_active_session() if wm else None
+                except Exception:
+                    active_session = None
+                
+                if active_session:
+                    audio_dir = active_session["audio_dir"]
+                else:
+                    audio_dir = os.path.join(self.workspace_dir, "audio_solo")
+                    os.makedirs(audio_dir, exist_ok=True)
+                
+                audio_path = os.path.join(audio_dir, f"audio_{index}_{text_hash}.wav")
+                if not os.path.exists(audio_path):
+                    try:
+                        AudioEngine().generar_audio(voz, audio_path)
+                    except Exception:
+                        pass
+                if os.path.exists(audio_path):
+                    dur = AudioEngine().obtener_duracion(audio_path)
+                else:
+                    dur = max(1.5, len(voz.split()) / 2.5)
+                time.sleep(dur + 0.5)  # +0.5s de gracia al final
                 
                 if self.floating_ctrl:
                     self.floating_ctrl.stop_processing_animation()

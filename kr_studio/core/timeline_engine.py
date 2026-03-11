@@ -265,13 +265,13 @@ class TimelineEngine:
 
     def auto_load_tts_audios(self, audio_dir: str, timestamps: dict = None):
         """
-        Detecta archivos .mp3 en audio_dir y los añade automáticamente
+        Detecta archivos .wav en audio_dir y los añade automáticamente
         a la pista A1 con posiciones basadas en timestamps.
         """
         if not os.path.isdir(audio_dir):
             return
 
-        audio_files = sorted([f for f in os.listdir(audio_dir) if f.endswith('.mp3')])
+        audio_files = sorted([f for f in os.listdir(audio_dir) if f.endswith('.wav')])
         if not audio_files:
             return
 
@@ -326,7 +326,13 @@ class TimelineEngine:
     # ─── Helpers ───
 
     def _get_audio_duration(self, path: str) -> float:
-        """Obtiene duración de un archivo de audio."""
+        """Obtiene duración de un archivo de audio (WAV o MP3)."""
+        try:
+            import wave
+            with wave.open(path, 'r') as wf:
+                return wf.getnframes() / float(wf.getframerate())
+        except Exception:
+            pass
         try:
             from mutagen.mp3 import MP3
             audio = MP3(path)

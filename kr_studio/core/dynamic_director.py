@@ -106,7 +106,8 @@ def read_log_file(filepath: str, last_n_lines: int = 40) -> str:
             lines = f.readlines()
         # Últimas N líneas, limpias
         recent = lines[-last_n_lines:] if len(lines) > last_n_lines else lines
-        clean = [strip_ansi(line).rstrip() for line in recent]
+        clean = [strip_ansi(line).rstrip() for line in recent
+                 if not line.startswith("# KR_STUDIO_SESSION")]
         # Filtrar líneas vacías consecutivas
         result = []
         prev_empty = False
@@ -148,12 +149,18 @@ class DynamicDirectorEngine:
         self.on_json_terminal_a = None  # callback(json_str)
         self.on_json_terminal_b = None  # callback(json_str)
 
+        from kr_studio.core.x11_controller import X11Controller
+        self.x11 = X11Controller()
+
     def start(self):
         self.is_running = True
         # Limpiar logs anteriores
+        import time as _time_mod
+        _session_id = str(int(_time_mod.time()))
         for f in [LOG_TERMINAL_A, LOG_TERMINAL_B]:
             try:
-                open(f, 'w').close()
+                with open(f, 'w') as fh:
+                    fh.write(f"# KR_STUDIO_SESSION {_session_id}\n")
             except Exception:
                 pass
         threading.Thread(target=self._run_dynamic_sequence, daemon=True).start()
@@ -185,6 +192,42 @@ class DynamicDirectorEngine:
                 prev_size = size
         return read_log_file(log_path, 25)
 
+    def _wait_for_dominion_response(self, max_wait: int = 45) -> str:
+        """
+        Espera a que DOMINION termine de responder monitoreando el log.
+        Detecta fin cuando el output deja de crecer Y aparece el prompt.
+        """
+        prev_size = 0
+        stable_count = 0
+        
+        # Indicadores de que DOMINION terminó de responder
+        done_indicators = [">>>", ">> ", "Escribe", "Input:", "> "]
+        
+        for _ in range(max_wait * 2):
+            if not self.is_running:
+                break
+            time.sleep(0.5)
+            
+            try:
+                size = os.path.getsize(LOG_TERMINAL_A)
+            except OSError:
+                size = 0
+            
+            if size == prev_size:
+                stable_count += 1
+                if stable_count >= 6:  # 3s sin cambios
+                    # Verificar si hay indicador de fin
+                    content = read_log_file(LOG_TERMINAL_A, 10)
+                    if any(ind in content for ind in done_indicators):
+                        break
+                    if stable_count >= 20:  # 10s sin cambios = timeout
+                        break
+            else:
+                stable_count = 0
+                prev_size = size
+        
+        return read_log_file(LOG_TERMINAL_A, 50)
+
     def _analyze_cmd_output(self, command: str, output: str) -> dict:
         """AI analiza output de comando → resumen TTS + detección de error."""
         if not self.ai_engine or not self.ai_engine.chat_session:
@@ -207,40 +250,17 @@ class DynamicDirectorEngine:
     # ─── X11 Utils ───
 
     def _focus_window(self, wid: str):
-        try:
-            subprocess.run(['xdotool', 'windowactivate', '--sync', wid],
-                           capture_output=True, timeout=5)
-            time.sleep(0.3)
-        except Exception:
-            pass
+        self.x11.focus_window(wid)
 
     def _type_text(self, wid: str, text: str, delay_ms: int = None):
-        delay = delay_ms or self.typing_delay
-        self._focus_window(wid)
-        try:
-            subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', str(delay), text],
-                           capture_output=True, text=True, timeout=120)
-        except Exception as e:
-            self._log("Error", f"xdotool type: {e}")
+        speed = getattr(self.app, 'typing_speed_pct', 80) if hasattr(self, 'app') else 80
+        self.x11.type_text(wid, text, speed, delay_ms)
 
     def _send_key(self, wid: str, key: str):
-        self._focus_window(wid)
-        try:
-            subprocess.run(['xdotool', 'key', '--clearmodifiers', key],
-                           capture_output=True, text=True, timeout=5)
-        except Exception:
-            pass
+        self.x11.send_key(wid, key)
 
     def _resize_window(self, wid: str, w=450, h=800):
-        try:
-            subprocess.run(['wmctrl', '-i', '-r', hex(int(wid)), '-e', f'0,-1,-1,{w},{h}'],
-                           capture_output=True, timeout=5)
-        except Exception:
-            try:
-                subprocess.run(['xdotool', 'windowsize', wid, str(w), str(h)],
-                               capture_output=True, timeout=5)
-            except Exception:
-                pass
+        self.x11.resize_window(wid, w, h)
 
     def _log(self, sender: str, msg: str):
         try:
@@ -287,6 +307,33 @@ class DynamicDirectorEngine:
                 self._flog("  Editor B actualizado ✅", "ok")
             except Exception as e:
                 self._flog(f"  Error Editor B: {e}", "error")
+
+    def _sanitize_for_terminal(self, text: str) -> str:
+        """Sanitiza texto para escritura segura en terminal zsh/bash."""
+        # Caracteres que zsh interpreta y pueden causar problemas
+        dangerous = {
+            "?": "",      # glob
+            "!": "",      # history expansion
+            "*": "",      # glob
+            "¿": "",
+            "¡": "",
+            "[": "(",
+            "]": ")",
+            "`": "'",
+            "$": "",      # variable expansion
+            "#": "",      # comentario
+            "&": "y",     # background process
+            "|": ",",     # pipe
+            ";": ",",     # command separator
+            ">": "",      # redirection
+            "<": "",      # redirection
+            "\\": "",     # escape
+        }
+        result = text
+        for char, replacement in dangerous.items():
+            result = result.replace(char, replacement)
+        # Truncar a máximo 200 caracteres para evitar overflow de terminal
+        return result[:200].strip()
 
     # ─── SECUENCIA PRINCIPAL ───
 
@@ -402,10 +449,8 @@ class DynamicDirectorEngine:
                     prev_question, dom_summary, exec_cmds, tb_summary, cycle
                 )
 
-            # Sanitizar: remover caracteres que zsh interpreta como glob
-            question = question.replace("?", "").replace("!", "").replace("*", "")
-            question = question.replace("¿", "").replace("¡", "")
-            question = question.replace("[", "(").replace("]", ")").replace("`", "'")
+            # Sanitizar la pregunta antes de enviarla
+            question = self._sanitize_for_terminal(question)
 
             self._flog(f"  Q: {question[:45]}...", "info")
             self._focus_window(self.wid_a)
@@ -414,17 +459,16 @@ class DynamicDirectorEngine:
             time.sleep(1.0)
             self._send_key(self.wid_a, "Return")
 
-            self._flog("  Esperando DOMINION...", "wait")
-            time.sleep(12.0)
-
+            self._flog("  ⏳ Esperando respuesta de DOMINION...", "wait")
+            dom_summary = self._wait_for_dominion_response(max_wait=45)
+            self._flog(f"  DOMINION: {len(dom_summary.split())} palabras ✅", "ok")
+            
             self._wait_continue(f"DOMINION respondió (Ciclo {cycle})")
             prev_question = question
 
             # ══════════════════════════════════════
-            # FASE B: Leer Terminal A (desde archivo)
+            # FASE B: Leer Terminal A (Resultados)
             # ══════════════════════════════════════
-            self._flog("  📖 Leyendo log Terminal A...", "info")
-            dom_summary = self._read_terminal_a(50)
             line_count = len(dom_summary.split('\n'))
             self._log("Director", f"📖 Terminal A: {line_count} líneas (desde log)")
             self._flog(f"  Terminal A: {line_count} líneas ✅", "ok")
