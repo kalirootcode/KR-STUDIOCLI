@@ -10,7 +10,7 @@ from kr_studio.core.targets_db import (
     get_targets_summary_for_prompt,
     seleccionar_lab_automatico,
 )
-from kr_studio.core.content_memory import get_content_prompt
+from kr_studio.core.video_templates import get_content_prompt, build_video_config_block
 from kr_studio.core.video_templates import build_video_config_block
 import typing
 
@@ -31,7 +31,19 @@ REGLAS DE VOZ TTS:
 - Evita signos de exclamación excesivos. Usa un tono calmado y seguro.
 - NO uses emojis en el campo "voz" — solo texto limpio para que el TTS suene natural.
 - Usa puntos y comas para crear pausas naturales en la narración.
-- Los comandos técnicos mencionados en la voz deben pronunciarse de forma natural (ej: "nmap" como "en-map", "pwd" como "pe-doble u-de").
+
+REGLAS DE PRONUNCIACIÓN DE COMANDOS (OBLIGATORIO APLICAR):
+- Al mencionar comandos en el campo "voz", el TTS debe pronunciarlos correctamente.
+- El campo "comando_visual" debe contener el comando original (ej: "nmap -sV -Pn")
+- El campo "voz" debe contener la versión pronunciable:
+  * Comandos: "nmap" → "enemap", "curl" → "curl", "sudo" → "sudo"
+  * Flags: "-sV" → "menos ese ve", "-Pn" → "menos pe ene", "-f" → "menos efe"
+  * Símbolos: "|" → "pipe", "./" → "punto barra", "&&" → "and and"
+  * Rutas: "./script.sh" → "punto barra script punto shell"
+- Ejemplo CORRECTO:
+  {"tipo": "ejecucion", "comando_visual": "nmap -sV -Pn 192.168.1.1", "voz": "Ejecuto enemap menos ese ve menos pe ene contra la IP uno nueve dos punto uno seis ocho punto uno punto uno"}
+- Ejemplo INCORRECTO:
+  {"tipo": "ejecucion", "comando_visual": "nmap -sV -Pn 192.168.1.1", "voz": "Ejecuto nmap menos sV menos Pn 192.168.1.1"}
 
 TU OBJETIVO PRINCIPAL ES ENSEÑAR: Cada guion debe tener una estructura de aprendizaje clara donde se explique *qué* hace la herramienta, *por qué* se utiliza, y *cómo* interpretar los resultados obtenidos, sin inventar información. Eres libre de explicar conceptos avanzados reales de ciberseguridad.
 
@@ -340,6 +352,8 @@ Solo el JSON, nada más."""
         content_type: str | None = None,
         modo: str | None = None,
         formato: str | None = None,
+        duration_min: int = 5,
+        typing_speed: int = 80,
     ) -> str:
         """
         Genera un guion inyectando el lab correcto automáticamente.
@@ -347,6 +361,8 @@ Solo el JSON, nada más."""
         Si se provee content_type, usa el prompt especializado de memoria de contenido.
         modo: "SOLO_TERM" or "DUAL_AI" - determina el formato del JSON.
         formato: "9:16" or "16:9" - determina el formato de video.
+        duration_min: duración estimada del video en minutos.
+        typing_speed: velocidad de tipeo en ms por carácter.
         """
         if not self.chat_session:
             raise RuntimeError("API Key no configurada.")
@@ -431,6 +447,18 @@ El formato es horizontal para YouTube. Puedes usar comandos que muestren más in
                 f"{modo_instruction}"
                 f"{formato_instruction}"
             )
+
+        # Instrucciones de duración y velocidad
+        escenas_aprox = duration_min * 6
+        dur_speed_instruction = f"""
+[PARAMETROS DE DURACIÓN Y VELOCIDAD]
+- El usuario ha solicitado que este video dure aproximadamente {duration_min} minuto(s).
+- Genera un JSON profundo y desarrollado que abarque este tiempo (aprox {escenas_aprox} escenas ricas en contenido y narración).
+- Si es 1 minuto, hazlo directo y rápido (tipo TikTok/Reel, 5-8 escenas).
+- Si son 5-10 minutos o más, profundiza con múltiples comandos, análisis exhaustivo, y ejemplos prácticos variados.
+- La velocidad de tipeo actual (Delay) está configurada a {typing_speed}ms por tecla.
+"""
+        prompt = f"{prompt}\n{dur_speed_instruction}"
 
         try:
             response = self.chat_session.send_message(prompt)

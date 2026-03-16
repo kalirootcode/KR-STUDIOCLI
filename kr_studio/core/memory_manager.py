@@ -87,3 +87,16 @@ class MemoryManager:
         """Devuelve las funciones que el agente IA (Gemini) puede usar como 'tools'."""
         # Se expone `save_fact` estructurada para genai
         return [self.save_fact]
+
+    # Preferencias de UI
+    def save_ui_preference(self, key: str, value: typing.Any):
+        """Guarda una preferencia de UI."""
+        if "ui_preferences" not in self.memory:
+            self.memory["ui_preferences"] = {}
+        self.memory["ui_preferences"][key] = value
+        self._save_memory()
+        logger.info(f"💾 UI Preference guardada: {key} = {value}")
+
+    def get_ui_preference(self, key: str, default: typing.Any = None) -> typing.Any:
+        """Obtiene una preferencia de UI."""
+        return self.memory.get("ui_preferences", {}).get(key, default)

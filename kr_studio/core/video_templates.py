@@ -506,3 +506,23 @@ def get_presenter_list() -> list:
 def get_audience_list() -> list:
     return [{"key": k, "nombre": v["nombre"]}
             for k, v in AUDIENCE_CONFIGS.items()]
+
+
+def get_content_types():
+    return list(VIDEO_TEMPLATES.keys())
+
+
+def get_content_prompt(content_type: str, tema: str, labs_context: str = "", memory_context: str = "") -> str:
+    if content_type not in VIDEO_TEMPLATES:
+        raise ValueError(f"Tipo de contenido '{content_type}' no encontrado")
+    template = VIDEO_TEMPLATES[content_type]
+    return f"""
+TIPO DE VIDEO: {template['icono']} {template['nombre']}
+DESCRIPCIÓN: {template['descripcion']}
+DURACIÓN RECOMENDADA: {template['duracion_recomendada']}
+
+{template['estructura']}
+
+LABORATORIOS: {labs_context}
+{memory_context}
+"""

@@ -23,7 +23,11 @@ from kr_studio.core.workspace_manager import WorkspaceManager  # type: ignore
 from kr_studio.core.task_manager import TaskManager  # type: ignore
 from kr_studio.core.action_handler import ActionHandler  # type: ignore
 from kr_studio.ui.floating_control import FloatingControl  # type: ignore
-from kr_studio.core.content_memory import get_content_types  # type: ignore
+from kr_studio.core.video_templates import (
+    get_template_list,
+    get_presenter_list,
+    get_audience_list,
+)  # type: ignore
 from kr_studio.ui.components.chat_panel import ChatPanel  # type: ignore
 from kr_studio.ui.components.editor_panel import EditorPanel  # type: ignore
 from kr_studio.ui.components.config_panel import ConfigPanel  # type: ignore
@@ -54,7 +58,10 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         os.makedirs(self.workspace_dir, exist_ok=True)
         os.makedirs(self.projects_dir, exist_ok=True)
 
+        # Cargar preferencias guardadas
         self.typing_speed_pct = 80
+        self.video_duration_min = 5
+        self._load_ui_preferences()
         self.wid_a: typing.Optional[str] = None
         self.wid_b: typing.Optional[str] = None
         self._anim_id = None
@@ -354,6 +361,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             mode_frame,
             values=["DUAL AI", "SOLO TERM"],
             variable=self.pre_mode_var,
+            command=self._on_mode_change,
             font=("JetBrains Mono", 10, "bold"),
             height=24,
             fg_color=COLORS["bg_dark"],
@@ -726,6 +734,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             button_color=COLORS["accent_magenta"],
             button_hover_color="#9c27b0",
             width=140,
+            command=self._on_format_change,
         )
         self.format_combo.set("9:16 (Vertical)")
         self.format_combo.pack(side="left", padx=6)
@@ -860,7 +869,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             text_color=COLORS["text_dim"],
         ).pack(side="left")
 
-        content_types = ["Por defecto"] + get_content_types()
+        content_types = ["Por defecto"] + [t["key"] for t in get_template_list()]
         self.content_combo = ctk.CTkOptionMenu(
             content_row,
             values=content_types,
@@ -2201,13 +2210,65 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             self, target_ip, mode, aspect, on_progress, on_finish, on_error
         )
 
+    def _load_ui_preferences(self):
+        """Carga las preferencias guardadas de UI."""
+        if not hasattr(self.ai, "memory_manager"):
+            return
+        mm = self.ai.memory_manager
+
+        # Cargar velocidad de tipeo
+        saved_speed = mm.get_ui_preference("typing_speed")
+        if saved_speed:
+            self.typing_speed_pct = saved_speed
+            if hasattr(self, "speed_slider"):
+                self.speed_slider.set(saved_speed)
+            if hasattr(self, "speed_label"):
+                self.speed_label.configure(text=f"{saved_speed}%")
+
+        # Cargar duración de video
+        saved_duration = mm.get_ui_preference("video_duration")
+        if saved_duration:
+            self.video_duration_min = saved_duration
+            if hasattr(self, "duration_slider"):
+                self.duration_slider.set(saved_duration)
+            if hasattr(self, "duration_label"):
+                self.duration_label.configure(text=f"{saved_duration} min")
+
+        # Cargar formato
+        saved_format = mm.get_ui_preference("format")
+        if saved_format and hasattr(self, "format_combo"):
+            self.format_combo.set(saved_format)
+
+        # Cargar modo
+        saved_mode = mm.get_ui_preference("mode")
+        if saved_mode and hasattr(self, "pre_mode_var"):
+            self.pre_mode_var.set(saved_mode)
+
     def _on_speed_change(self, value):
         self.typing_speed_pct = int(value)
         self.speed_label.configure(text=f"{self.typing_speed_pct}%")
+        if hasattr(self.ai, "memory_manager"):
+            self.ai.memory_manager.save_ui_preference(
+                "typing_speed", self.typing_speed_pct
+            )
 
     def _on_duration_change(self, value):
         self.video_duration_min = int(value)
         self.duration_label.configure(text=f"{self.video_duration_min} min")
+        if hasattr(self.ai, "memory_manager"):
+            self.ai.memory_manager.save_ui_preference(
+                "video_duration", self.video_duration_min
+            )
+
+    def _on_format_change(self, value):
+        """Guarda la preferencia de formato."""
+        if hasattr(self.ai, "memory_manager"):
+            self.ai.memory_manager.save_ui_preference("format", value)
+
+    def _on_mode_change(self, value):
+        """Guarda la preferencia de modo."""
+        if hasattr(self.ai, "memory_manager"):
+            self.ai.memory_manager.save_ui_preference("mode", value)
 
     def _on_video_config_change(self, *args):
         """Actualiza la configuración de video en AIEngine cuando cambia la UI."""

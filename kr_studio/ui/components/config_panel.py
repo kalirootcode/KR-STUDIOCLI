@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from kr_studio.ui.theme import COLORS
 from kr_studio.core.master_director import DirectorMode
-from kr_studio.core.content_memory import get_content_types
+from kr_studio.core.video_templates import get_template_list as get_content_types
 
 if TYPE_CHECKING:
     from kr_studio.ui.main_window import MainWindow

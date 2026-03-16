@@ -15,6 +15,8 @@ import logging
 import unicodedata
 import typing
 
+from kr_studio.core.pronunciation_mapper import transform_to_pronounceable
+
 logger = logging.getLogger(__name__)
 
 _EMOJI_RE = re.compile(
@@ -58,14 +60,19 @@ class AudioEngine:
             return ""
         return texto
 
-    def generar_audio(self, texto: str, output_path: str) -> float:
+    def generar_audio(self, texto: str, output_path: str, apply_pronunciation: bool = True) -> float:
         """
         Genera WAV a partir de texto.
         - USA siempre --text (nunca --ssml, que falla en algunos entornos)
         - SIN loudnorm (incompatible con ffmpeg 8.x en una pasada)
         - Retorna 0.0 si el texto no es pronunciable (sin lanzar excepcion)
+        - apply_pronunciation: si True, transforma comandos para mejor pronunciación TTS
         """
         texto = self._limpiar(texto)
+        
+        # Transformar texto para mejor pronunciación TTS
+        if apply_pronunciation:
+            texto = transform_to_pronounceable(texto)
         if not texto:
             logger.debug("generar_audio: texto vacio, omitiendo.")
             return 0.0

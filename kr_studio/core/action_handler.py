@@ -89,13 +89,23 @@ class ActionHandler:
                 formato_sel = self.ui.orchestrator_format_var.get()
                 formato = "9:16" if "9:16" in formato_sel else "16:9"
 
-            # Generar el proyecto pasando el modo y formato
+            # Obtener duración y velocidad
+            duration_min = 5
+            typing_speed = 80
+            if hasattr(self.ui, "video_duration_min"):
+                duration_min = self.ui.video_duration_min
+            if hasattr(self.ui, "typing_speed_pct"):
+                typing_speed = self.ui.typing_speed_pct
+
+            # Generar el proyecto pasando todos los parámetros
             response_text = self.ai.generar_proyecto(
                 tendencia=prompt,
                 objetivo_legal=target_ip,
                 content_type=content_type,
                 modo=modo_param,
                 formato=formato,
+                duration_min=duration_min,
+                typing_speed=typing_speed,
             )
 
             json_data = self.ai.extraer_json(response_text)
