@@ -7,6 +7,7 @@ import threading
 import time
 import os
 import logging
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ class ScreenRecorder:
         self.output_path = os.path.join(output_dir, "raw_video.mp4")
         self.is_recording = False
         self.fps = 30
-        self._thread = None
-        self._region = None  # {"left": x, "top": y, "width": w, "height": h}
+        self._thread: typing.Optional[threading.Thread] = None
+        self._region: typing.Optional[dict] = None  # {"left": x, "top": y, "width": w, "height": h}
 
     def _get_window_geometry(self, wid: str) -> dict:
         """Obtiene la posición y tamaño de una ventana X11."""
@@ -62,7 +63,7 @@ class ScreenRecorder:
     def stop(self) -> str:
         """Detiene la grabación y retorna la ruta del archivo."""
         self.is_recording = False
-        if self._thread:
+        if self._thread is not None:
             self._thread.join(timeout=5)
         logger.info(f"⏹ Grabación detenida: {self.output_path}")
         return self.output_path
@@ -74,17 +75,17 @@ class ScreenRecorder:
             import cv2
             import numpy as np
 
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            w = self._region["width"]
-            h = self._region["height"]
-            out = cv2.VideoWriter(self.output_path, fourcc, self.fps, (w, h))
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # type: ignore
+            w = self._region["width"] if self._region else 450
+            h = self._region["height"] if self._region else 800
+            out = cv2.VideoWriter(self.output_path, fourcc, self.fps, (w, h))  # type: ignore
 
             frame_interval = 1.0 / self.fps
 
             with mss.mss() as sct:
                 monitor = {
-                    "left": self._region["left"],
-                    "top": self._region["top"],
+                    "left": self._region["left"] if self._region else 0,
+                    "top": self._region["top"] if self._region else 0,
                     "width": w,
                     "height": h
                 }

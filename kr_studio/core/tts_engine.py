@@ -9,6 +9,7 @@ import time
 import logging
 import subprocess
 import unicodedata
+import typing
 
 from kr_studio.core.audio_engine import AudioEngine
 
@@ -35,7 +36,7 @@ class TTSEngine:
         self.audio_dir     = os.path.join(workspace_dir, subdir)
         os.makedirs(self.audio_dir, exist_ok=True)
         self._counter      = 0
-        self._current_proc = None
+        self._current_proc: typing.Optional[subprocess.Popen] = None
 
     # ─────────────────────────────────────────
     #  Validación interna

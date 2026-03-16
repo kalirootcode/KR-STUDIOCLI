@@ -4,6 +4,7 @@ Gestiona clips de video y audio como objetos con posición, duración y track.
 """
 import os
 import logging
+import typing
 import copy
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -133,7 +134,6 @@ class TimelineEngine:
         self.clips.clear()
         self._undo_stack.clear()
         self._next_id = data.get("next_id", 1)
-        self.total_duration = data.get("total_duration", 0.0)
         
         for cdict in data.get("clips", []):
             clip = Clip(
@@ -146,12 +146,9 @@ class TimelineEngine:
                 source_start=cdict.get("source_start", 0.0),
                 muted=cdict.get("muted", False)
             )
-            # Asegurar end manual si está pre-dictated
-            if "end" in cdict:
-                clip.end = cdict["end"]
             self.clips.append(clip)
         
-        self.total_duration = max([c.end for c in self.clips] + [0.0])
+        # La duración total es un property, no hay que llenarlo manualmente
 
     def split_clip_at(self, clip_id: int, split_time: float) -> bool:
         """Divide un clip en dos en la posición dada (tiempo absoluto del timeline)."""
@@ -263,7 +260,7 @@ class TimelineEngine:
 
     # ─── Auto-detección de Audios TTS ───
 
-    def auto_load_tts_audios(self, audio_dir: str, timestamps: dict = None):
+    def auto_load_tts_audios(self, audio_dir: str, timestamps: typing.Optional[dict] = None):
         """
         Detecta archivos .wav en audio_dir y los añade automáticamente
         a la pista A1 con posiciones basadas en timestamps.
@@ -334,13 +331,13 @@ class TimelineEngine:
         except Exception:
             pass
         try:
-            from mutagen.mp3 import MP3
+            from mutagen.mp3 import MP3  # type: ignore
             audio = MP3(path)
             return audio.info.length
         except Exception:
             pass
         try:
-            from moviepy import AudioFileClip
+            from moviepy import AudioFileClip  # type: ignore
             clip = AudioFileClip(path)
             dur = clip.duration
             clip.close()
@@ -353,7 +350,7 @@ class TimelineEngine:
         if path.lower().endswith(('.png', '.jpg', '.jpeg')):
             return 5.0  # Default duration for images
         try:
-            from moviepy import VideoFileClip
+            from moviepy import VideoFileClip  # type: ignore
             clip = VideoFileClip(path)
             dur = clip.duration
             clip.close()

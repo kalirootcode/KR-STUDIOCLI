@@ -2,6 +2,7 @@ import json
 import os
 import logging
 from datetime import datetime
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +10,7 @@ class MemoryManager:
     """Gestor de memoria persistente para la IA (estilo MCP Memory Server)."""
 
     def __init__(self, workspace_dir: str):
+        self.memory: typing.Dict[str, typing.Any] = {}
         self.memory_dir = os.path.join(workspace_dir, ".memory")
         os.makedirs(self.memory_dir, exist_ok=True)
         self.memory_file = os.path.join(self.memory_dir, "ai_memory.json")
@@ -59,11 +61,27 @@ class MemoryManager:
                 
         if self.memory["facts"]:
             # Obtener los 15 hechos más recientes
-            recent_facts = sorted(self.memory["facts"], key=lambda k: k['timestamp'], reverse=True)[:15]
+            recent_facts = sorted(self.memory["facts"], key=lambda k: k['timestamp'], reverse=True)[:15]  # type: ignore
             for fact in recent_facts:
                 context += f"- HECHO: {fact['content']} (Guardado el: {fact['timestamp'][:10]})\n"
                 
         return context
+
+    def save_content_preference(self, content_type: str):
+        """Guarda la preferencia de tipo de contenido usado por el usuario."""
+        if "content_preferences" not in self.memory:
+            self.memory["content_preferences"] = {}
+        
+        if content_type not in self.memory["content_preferences"]:
+            self.memory["content_preferences"][content_type] = 0
+        
+        self.memory["content_preferences"][content_type] += 1
+        self._save_memory()
+        logger.info(f"🧠 Preferencia de contenido guardada: {content_type}")
+
+    def get_content_preferences(self) -> dict:
+        """Obtiene las preferencias de tipos de contenido."""
+        return self.memory.get("content_preferences", {})
 
     def get_tool_functions(self):
         """Devuelve las funciones que el agente IA (Gemini) puede usar como 'tools'."""

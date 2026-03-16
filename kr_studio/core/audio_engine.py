@@ -13,6 +13,7 @@ import wave
 import time
 import logging
 import unicodedata
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class AudioEngine:
         "Tomas (Argentina)":  "es-AR-TomasNeural",
     }
 
-    def __init__(self, voice: str = None):
+    def __init__(self, voice: typing.Optional[str] = None):
         self.voice = voice or self.DEFAULT_VOICE
 
     def _limpiar(self, texto: str) -> str:
@@ -89,7 +90,7 @@ class AudioEngine:
                 if res.returncode == 0 and os.path.exists(tmp_mp3):
                     break
                 ultimo_error = (res.stderr or res.stdout or "").strip()
-                logger.warning(f"edge-tts intento {intento}: rc={res.returncode} {ultimo_error[:80]}")
+                logger.warning(f"edge-tts intento {intento}: rc={res.returncode} {ultimo_error[:80]}")  # type: ignore
             except FileNotFoundError:
                 raise RuntimeError("edge-tts no instalado. Activa el venv: pip install edge-tts")
             except subprocess.TimeoutExpired:
@@ -110,7 +111,7 @@ class AudioEngine:
         try:
             conv = subprocess.run(cmd_ffmpeg, capture_output=True, text=True, timeout=60)
             if conv.returncode != 0:
-                raise RuntimeError(f"ffmpeg fallo (rc={conv.returncode}): {conv.stderr[:300]}")
+                raise RuntimeError(f"ffmpeg fallo (rc={conv.returncode}): {conv.stderr[:300]}")  # type: ignore
         finally:
             self._rm(tmp_mp3)
 

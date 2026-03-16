@@ -3,6 +3,8 @@ import json
 import shutil
 import time
 from datetime import datetime
+import typing
+from typing import cast
 
 class WorkspaceManager:
     """
@@ -32,12 +34,12 @@ class WorkspaceManager:
         self.sessions_dir = os.path.join(base_dir, "sessions")
         os.makedirs(self.projects_dir, exist_ok=True)
         os.makedirs(self.sessions_dir, exist_ok=True)
-        self._active_session = None
+        self._active_session: typing.Optional[dict] = None
     
-    def create_session(self, topic: str, chapter: int = None) -> dict:
+    def create_session(self, topic: str, chapter: typing.Optional[int] = None) -> dict:
         """Crea un workspace temporal para una sesión de grabación."""
         import re
-        slug = re.sub(r'[^a-zA-Z0-9]', '_', topic)[:40]
+        slug = re.sub(r'[^a-zA-Z0-9]', '_', topic)[:40]  # type: ignore
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         name = f"{ts}_{slug}"
         if chapter is not None:
@@ -57,7 +59,8 @@ class WorkspaceManager:
         
         for d in [session["dir"], session["audio_dir"],
                   session["logs_dir"], session["exports_dir"]]:
-            os.makedirs(d, exist_ok=True)
+            if d:
+                os.makedirs(str(d), exist_ok=True)
         
         # Guardar metadata de la sesión
         with open(os.path.join(session_dir, "session.json"), "w") as f:
@@ -67,9 +70,9 @@ class WorkspaceManager:
         return session
     
     def get_active_session(self) -> dict:
-        return self._active_session
+        return cast(dict, self._active_session) if self._active_session else {}
     
-    def save_guion(self, json_data: list, session: dict = None) -> str:
+    def save_guion(self, json_data: list, session: typing.Optional[dict] = None) -> str:
         """Guarda el JSON del guion en el workspace de la sesión."""
         target = session or self._active_session
         if not target:
@@ -80,7 +83,7 @@ class WorkspaceManager:
         return path
     
     def get_audio_path(self, index: int, text_hash: str, 
-                        session: dict = None) -> str:
+                        session: typing.Optional[dict] = None) -> str:
         """Retorna la ruta de audio para una escena dentro del workspace."""
         target = session or self._active_session
         if not target:
@@ -88,7 +91,7 @@ class WorkspaceManager:
         return os.path.join(target["audio_dir"], 
                             f"audio_{index:03d}_{text_hash}.wav")
     
-    def list_sessions(self) -> list:
+    def list_sessions(self, count: int = 20) -> list:
         """Lista todas las sesiones existentes."""
         sessions = []
         for name in sorted(os.listdir(self.sessions_dir), reverse=True):
@@ -99,7 +102,7 @@ class WorkspaceManager:
                         sessions.append(json.load(f))
                 except Exception:
                     pass
-        return sessions[:20]  # Últimas 20
+        return sessions[:count]  # type: ignore
     
     def cleanup_old_sessions(self, keep_days: int = 7):
         """Elimina sesiones más antiguas de X días."""

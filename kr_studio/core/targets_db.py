@@ -191,7 +191,7 @@ def seleccionar_lab_automatico(tema: str) -> dict:
             mejor_docker_score = score
             mejor_docker = (key, lab)
 
-    if mejor_docker and mejor_docker_score >= 2:
+    if mejor_docker is not None and mejor_docker_score >= 2:
         key, lab = mejor_docker
         ip = _obtener_ip_lab(lab)
         return {
@@ -215,7 +215,7 @@ def seleccionar_lab_automatico(tema: str) -> dict:
             mejor_remoto_score = score
             mejor_remoto = (key, target)
 
-    if mejor_remoto:
+    if mejor_remoto is not None:
         key, target = mejor_remoto
         return {
             "tipo":               "remoto",
@@ -297,7 +297,7 @@ def get_targets_summary_for_prompt() -> str:
         "🐳 LABS DOCKER LOCALES (PRIORIDAD MÁXIMA — usar para ataques reales):",
     ]
     for key, lab in DOCKER_LABS.items():
-        temas_str = ", ".join(lab["temas"][:6])
+        temas_str = ", ".join(lab["temas"][:6])  # type: ignore
         lines.append(f"  • [{key.upper()}] {lab['nombre']}")
         lines.append(f"    Contenedor: {lab['contenedor']}")
         if "url" in lab:

@@ -4,6 +4,7 @@ import threading
 import time
 import os
 import re
+import typing
 from typing import Callable, List
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,8 @@ class SeriesOrchestrator:
         self.projects_dir = os.path.join(workspace_dir, "projects")
         os.makedirs(self.projects_dir, exist_ok=True)
         
-        self.master_structure = None
-        self._series_dir = None
+        self.master_structure: typing.Any = None
+        self._series_dir: typing.Optional[str] = None
         self._is_rendering = False
         
     def set_series_name(self, topic: str):
@@ -36,7 +37,7 @@ class SeriesOrchestrator:
         topic_ascii = topic_norm.encode("ascii", "ignore").decode("ascii")
         clean_topic = re.sub(r"[^a-zA-Z0-9_\-]", "_", topic_ascii.replace(" ", "_"))
         # Colapsar guiones bajos múltiples y truncar a 40 chars
-        clean_topic = re.sub(r"_+", "_", clean_topic).strip("_")[:40]
+        clean_topic = re.sub(r"_+", "_", clean_topic).strip("_")[:40]  # type: ignore
         if not clean_topic:
             clean_topic = "Serie_Sin_Titulo"
         self._series_dir = os.path.join(self.projects_dir, clean_topic)
@@ -95,9 +96,10 @@ class SeriesOrchestrator:
                 self.set_series_name(json_data.get("titulo_serie", topic))
                 
                 # Guardar master structure
-                path = os.path.join(self._series_dir, "master_structure.json")
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(json_data, f, indent=4)
+                path = os.path.join(self._series_dir, "master_structure.json") if self._series_dir else ""  # type: ignore
+                if path:
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(json_data, f, indent=4)
                     
                 on_success(json_data)
                 
@@ -149,7 +151,7 @@ class SeriesOrchestrator:
                 # EXTRACTO DEL CAPITULO ANTERIOR (MEMORIA SERIAL)
                 contexto_previo = ""
                 if nro > 1 and self._series_dir:
-                    prev_file = os.path.join(self._series_dir, f"capitulo_{nro-1}.json")
+                    prev_file = os.path.join(self._series_dir, f"capitulo_{nro-1}.json")  # type: ignore
                     if os.path.exists(prev_file):
                         try:
                             with open(prev_file, "r", encoding="utf-8") as f:
@@ -159,7 +161,7 @@ class SeriesOrchestrator:
                             narrativas = [step.get("voz") for step in prev_data if step.get("tipo") == "narracion" and step.get("voz")]
                             
                             resumen_comandos = ", ".join(comandos_ejecutados) if comandos_ejecutados else "Ninguno"
-                            resumen_narrativa = " ".join(narrativas)[:200] + "..." if narrativas else "Sin narrativa"
+                            resumen_narrativa = " ".join(narrativas)[:200] + "..." if narrativas else "Sin narrativa"  # type: ignore
                             
                             contexto_previo = (
                                 f"\n\n[MEMORIA DE CONTINUIDAD - CAPÍTULO ANTERIOR ({nro-1})]\n"
@@ -215,9 +217,10 @@ class SeriesOrchestrator:
                     self.set_series_name("Serie_Desconocida")
                     
                 filename = f"capitulo_{nro}.json"
-                path = os.path.join(self._series_dir, filename)
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(json_array, f, indent=4)
+                path = os.path.join(self._series_dir, filename) if self._series_dir else ""  # type: ignore
+                if path:
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(json_array, f, indent=4)
                     
                 on_success(nro, json_array, path)
                 
@@ -227,7 +230,7 @@ class SeriesOrchestrator:
         threading.Thread(target=_worker, daemon=True).start()
 
     def process_series_loop(self, main_app, target_ip: str, mode: str, aspect: str, on_progress: Callable, on_finish: Callable, on_error: Callable):
-        """Tarea 4: Renderizar Serie Completa. Ejecuta DirectorEngine secuencialmente."""
+        """Tarea 4: Renderizar Serie Completa. Ejecuta MasterDirector secuencialmente."""
         if self._is_rendering:
             on_error("Ya hay un renderizado en curso.")
             return
@@ -240,23 +243,18 @@ class SeriesOrchestrator:
         
         def _worker():
             try:
+                from kr_studio.core.master_director import MasterDirector, DirectorMode  # type: ignore
+
                 capitulos = self.master_structure.get("capitulos", [])
-                
-                if mode == "SOLO TERM":
-                    from kr_studio.core.solo_director import SoloDirectorEngine
-                else:
-                    from kr_studio.core.director import DirectorEngine
                 
                 for idx, cap in enumerate(capitulos):
                     if not self._is_rendering:
-                        break # Cancelado
+                        break  # Cancelado
                         
                     nro = cap.get("nro", idx + 1)
-                    path = os.path.join(self._series_dir, f"capitulo_{nro}.json")
+                    path = os.path.join(self._series_dir, f"capitulo_{nro}.json") if self._series_dir else ""  # type: ignore
                     
                     if not os.path.exists(path):
-                        # Intentar generarlo on-the-fly si no existe?
-                        # Mejor notificar error
                         on_error(f"Falta el JSON del capítulo {nro}. Genera todos primero.")
                         self._is_rendering = False
                         return
@@ -266,38 +264,32 @@ class SeriesOrchestrator:
                         
                     on_progress(f"Renderizando Capítulo {nro}: {cap.get('titulo')}")
                     
-                    if mode == "SOLO TERM":
-                        topic = cap.get("titulo", "Capitulo " + str(nro))
-                        director = SoloDirectorEngine(main_app.master_app, topic, main_app.video_duration_min, main_app.workspace_dir, aspect_ratio=aspect)
-                        director.json_data = json_data
-                        director.wid_b = main_app.wid_b
-                        director.typing_delay = main_app.typing_speed_pct
-                        director.floating_ctrl = main_app._floating_ctrl
-                        director.obs.password = main_app._load_env_value("OBS_PASSWORD", "")
-                        
-                        # Limpiar Terminal
-                        director._focus_window(main_app.wid_b)
-                        director._type_text(main_app.wid_b, "clear", 20)
-                        director._send_key(main_app.wid_b, "Return")
-                        time.sleep(1)
-                        
-                    else:
-                        director = DirectorEngine(main_app, json_data, main_app.workspace_dir)
-                        director.wid_a = main_app.wid_a
-                        director.wid_b = main_app.wid_b
-                        director.typing_delay = main_app.typing_speed_pct
-                        director.floating_ctrl = main_app._floating_ctrl
-                        director.obs.password = main_app._load_env_value("OBS_PASSWORD", "")
-                        
-                        # Limpiar UI/Terminal
-                        director._focus_window(main_app.wid_b)
-                        director._type_text(main_app.wid_b, "clear", 20)
-                        director._send_key(main_app.wid_b, "Return")
+                    director_mode = DirectorMode.SOLO_TERM if mode == "SOLO TERM" else DirectorMode.DUAL_AI
+                    
+                    director = MasterDirector(
+                        guion         = json_data,
+                        mode          = director_mode,
+                        workspace_dir = main_app.workspace_dir,
+                        typing_speed  = main_app.typing_speed_pct,
+                        wid_a         = main_app.wid_a,
+                        wid_b         = main_app.wid_b,
+                        project_name  = cap.get("titulo", f"cap_{nro}"),
+                        aspect_ratio  = aspect,
+                        obs_password  = main_app._load_env_value("OBS_PASSWORD", ""),
+                        auto_record   = True,
+                    )
+                    director.floating_ctrl = main_app._floating_ctrl
+                    
+                    # Limpiar terminal antes de cada capítulo
+                    if main_app.wid_b:
+                        director.x11.focus_window(main_app.wid_b)
+                        director.x11.type_text(main_app.wid_b, "clear", delay_ms=20)
+                        director.x11.send_key(main_app.wid_b, "Return")
                         time.sleep(1)
                     
                     main_app._active_director = director
-                    # Run bloqueante en este hilo
-                    director._run_sequence()
+                    # Run bloqueante en este hilo del orquestador
+                    director.run()
                     
                     # Pequeña pausa entre capítulos
                     time.sleep(3.0)

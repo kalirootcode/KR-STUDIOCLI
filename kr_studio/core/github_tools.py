@@ -1,5 +1,6 @@
 import urllib.request
 import urllib.parse
+import urllib.error
 import json
 import logging
 import base64
@@ -68,7 +69,7 @@ class GitHubOSINTTools:
                 readme_content = base64.b64decode(data["content"]).decode('utf-8')
                 # Truncar si es demasiado largo para no gastar todos los tokens (max 15000 chars estim)
                 if len(readme_content) > 15000:
-                    readme_content = readme_content[:15000] + "\n... [README TRUNCADO POR LONGITUD] ..."
+                    readme_content = readme_content[:15000] + "\n... [README TRUNCADO POR LONGITUD] ..."  # type: ignore
                 return f"--- README DE {repo_full_name} ---\n\n{readme_content}"
             else:
                 return f"No se encontró contenido decodificable en el README de {repo_full_name}."

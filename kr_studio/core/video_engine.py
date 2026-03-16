@@ -8,12 +8,14 @@ Estrategia de renderizado (anti-hang):
   3. Muxear video + audio con ffmpeg subprocess (confiable, sin pipes colgados)
 """
 import os
+import json
 import subprocess
 import threading
 import traceback
 import time as time_module
 import sys
 import re
+import typing
 
 class TqdmCapture:
     """Captura el stderr de tqdm para extraer el porcentaje de progreso."""
@@ -60,10 +62,10 @@ class VideoEngine:
         self,
         clips_data: list,
         total_duration: float,
-        output_path: str = None,
+        output_path: typing.Optional[str] = None,
         resolution: str = "1080p",
         preset: str = "medium",
-        progress_callback=None
+        progress_callback: typing.Optional[typing.Callable] = None
     ) -> str:
         """
         Renderiza el video final a partir de los clips del TimelineEngine.
@@ -101,7 +103,7 @@ class VideoEngine:
         open_clips = []
 
         try:
-            from moviepy import (
+            from moviepy import (  # type: ignore
                 VideoFileClip, ImageClip, AudioFileClip,
                 CompositeVideoClip, CompositeAudioClip, ColorClip
             )
@@ -162,9 +164,9 @@ class VideoEngine:
 
                 try:
                     if is_image:
-                        c = ImageClip(tc.source_path).with_duration(clip_dur)
+                        c = ImageClip(tc.source_path).with_duration(clip_dur)  # type: ignore
                     else:
-                        full_clip = VideoFileClip(tc.source_path)
+                        full_clip = VideoFileClip(tc.source_path)  # type: ignore
                         open_clips.append(full_clip)
 
                         real_dur = full_clip.duration
@@ -197,7 +199,7 @@ class VideoEngine:
                     continue
 
                 try:
-                    c = AudioFileClip(tc.source_path)
+                    c = AudioFileClip(tc.source_path)  # type: ignore
                     open_clips.append(c)
 
                     clip_dur = tc.end - tc.start
@@ -218,15 +220,15 @@ class VideoEngine:
 
             if len(video_layers) <= 1:
                 print("  ⚠ No hay clips de video válidos")
-                if progress_callback:
-                    progress_callback(0, "Error: No hay clips válidos")
+                if progress_callback is not None:
+                    typing.cast(typing.Callable, progress_callback)(0, "Error: No hay clips válidos")
                 return ""
 
             # ══════════════════════════════════════
             # PASO 3: Escribir VIDEO sin audio (rápido, sin deadlocks)
             # ══════════════════════════════════════
-            if progress_callback:
-                progress_callback(15, "Generando pista de video...")
+            if progress_callback is not None:
+                typing.cast(typing.Callable, progress_callback)(15, "Generando pista de video...")
 
             ffmpeg_preset = "ultrafast"
             if "slow" in preset.lower():
@@ -234,14 +236,14 @@ class VideoEngine:
             elif "medium" in preset.lower():
                 ffmpeg_preset = "medium"
 
-            final_video = CompositeVideoClip(video_layers, size=target_res)
+            final_video = CompositeVideoClip(video_layers, size=target_res)  # type: ignore
             final_video = final_video.with_duration(total_duration)
 
             print(f"\n  🎞️ Escribiendo video-only → {video_only_path}")
             print(f"     Preset: {ffmpeg_preset} | Bitrate: {bitrate} | FPS: 30")
 
             # Monitorear progreso capturando stderr
-            if progress_callback:
+            if progress_callback is not None:
                 progress_callback(15, "Iniciando renderización de frames (x264)...")
 
             with TqdmCapture(progress_callback) if progress_callback else open(os.devnull, 'w'):
@@ -265,12 +267,12 @@ class VideoEngine:
             has_audio = bool(audio_layers)
 
             if has_audio:
-                if progress_callback:
+                if progress_callback is not None:
                     progress_callback(80, "Generando pista de audio...")
 
                 print(f"  🔊 Escribiendo audio ({len(audio_layers)} pistas) → {audio_only_path}")
 
-                final_audio = CompositeAudioClip(audio_layers)
+                final_audio = CompositeAudioClip(audio_layers)  # type: ignore
                 final_audio = final_audio.with_duration(total_duration)
                 final_audio.write_audiofile(audio_only_path, fps=44100, logger=None)
                 final_audio.close()
@@ -279,7 +281,7 @@ class VideoEngine:
             # ══════════════════════════════════════
             # PASO 5: Muxear con FFMPEG (confiable, sin cuelgues)
             # ══════════════════════════════════════
-            if progress_callback:
+            if progress_callback is not None:
                 progress_callback(90, "Muxeando video + audio...")
 
             if has_audio:
@@ -295,7 +297,7 @@ class VideoEngine:
                 ]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode != 0:
-                    print(f"  ⚠ ffmpeg stderr: {result.stderr[:500]}")
+                    print(f"  ⚠ ffmpeg stderr: {str(result.stderr)[:500]}") # type: ignore
                     # Fallback: usar el video sin audio
                     os.rename(video_only_path, output_path)
                     print(f"  ⚠ Usando video sin audio como fallback")
@@ -318,8 +320,8 @@ class VideoEngine:
                     pass
 
             # ── Resultado ──
-            if progress_callback:
-                progress_callback(100, "¡Renderizado Completo!")
+            if progress_callback is not None:
+                typing.cast(typing.Callable, progress_callback)(100, "¡Renderizado Completo!")
 
             if os.path.exists(output_path):
                 file_size = os.path.getsize(output_path) / (1024 * 1024)
@@ -333,8 +335,15 @@ class VideoEngine:
             print(f"\n  ❌ ERROR FATAL: {e}")
             traceback.print_exc()
             if progress_callback:
-                progress_callback(0, f"Error: {e}")
-            return ""
+                progress_callback(0, f"Error: {e}") # Pass message to callback
+            
+            # TODO: Implementar llamada real a ffmpeg para muxing si moviepy falla con audio
+            # Por ahora moviepy lo maneja decentemente si no hay fallos de memoria.
+            
+            # Return an empty string to indicate failure, or output_path if it was successfully set
+            # and might contain a partially rendered file (e.g., video-only fallback).
+            # If output_path is not set or invalid, return an empty string.
+            return output_path if output_path and os.path.exists(output_path) else ""
 
         finally:
             for c in open_clips:
@@ -349,6 +358,7 @@ class VideoEngine:
                         os.remove(tmp)
                 except Exception:
                     pass
+        return ""
 
     def _resize_clip(self, clip, target_res):
         """Redimensiona un clip al tamaño target, centrando si el aspect ratio difiere."""

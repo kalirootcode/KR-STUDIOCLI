@@ -6,6 +6,7 @@ Requiere: OBS Studio con WebSocket habilitado (Tools > WebSocket Server Settings
 """
 import time
 import logging
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,9 @@ class OBSController:
         self.host = host
         self.port = port
         self.password = password
-        self.ws = None
+        self.ws: typing.Any = None
         self.connected = False
-        self._obs_requests = None
+        self._obs_requests: typing.Any = None
 
     def connect(self) -> bool:
         """Intenta conectarse a OBS WebSocket. Retorna True si se conectó."""
@@ -128,7 +129,7 @@ class OBSController:
         Crea las escenas si no existen y añade window capture sources.
         Retorna un dict con el resultado.
         """
-        result = {"ok": False, "scenes": [], "errors": []}
+        result: typing.Dict[str, typing.Any] = {"ok": False, "scenes": [], "errors": []}
 
         if not self.connected:
             result["errors"].append("No conectado a OBS")
@@ -188,7 +189,7 @@ class OBSController:
                 result["errors"].append(msg)
 
         if wid_a:
-            result["ok"] = "Terminal-A" in result["scenes"] and "Terminal-B" in result["scenes"]
+            result["ok"] = ("Terminal-A" in result["scenes"]) and ("Terminal-B" in result["scenes"])
         else:
             result["ok"] = "Terminal-B" in result["scenes"]
         return result

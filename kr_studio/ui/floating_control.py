@@ -3,16 +3,17 @@ floating_control.py — Mini Control Flotante para KR-STUDIO
 Widget pequeño, siempre visible, arrastrable, con botones de control
 y mini log animado de procesos.
 """
-import customtkinter as ctk
-import tkinter as tk
 import threading
+import typing
+import tkinter as tk
+import customtkinter as ctk  # type: ignore
 from datetime import datetime
 
 
 class FloatingControl(ctk.CTkToplevel):
     """Ventana flotante mini con controles de producción + mini log."""
 
-    def __init__(self, main_window):
+    def __init__(self, main_window: typing.Any):
         super().__init__()
         self.main_window = main_window
         self._app_root = main_window.master_app  # Referencia al CTk root
@@ -31,7 +32,7 @@ class FloatingControl(ctk.CTkToplevel):
         sh = self.winfo_screenheight()
         x = sw - 320
         y = sh - 320
-        self.geometry(f"300x260+{x}+{y}")
+        self.geometry(f"300x260+{int(x)}+{int(y)}")
 
         # ── Arrastre ──
         self._drag_x = 0
@@ -202,7 +203,7 @@ class FloatingControl(ctk.CTkToplevel):
 
         self._total_scenes = 0
         self._current_scene = 0
-        self._scene_index_override = None  # Para saltar a escena específica
+        self._scene_index_override: typing.Optional[int] = None  # Para saltar a escena específica
         self._skip_current = False          # Para saltar escena actual
         self._retry_current = False         # Para reintentar escena actual
 
@@ -361,7 +362,7 @@ class FloatingControl(ctk.CTkToplevel):
         with self._lock:
             val = self._scene_index_override
             self._scene_index_override = None
-            return val if val is not None else -1
+            return int(val) if val is not None else -1
 
     def _set_running(self):
         self.btn_stop.configure(state="normal")
@@ -398,18 +399,26 @@ class FloatingControl(ctk.CTkToplevel):
         with self._lock:
             self._continue_clicked = False
             self._waiting = True
+            
+            # Generar un ID único para esta espera para evitar "scene-skipping" por race condition
+            if not hasattr(self, "_wait_id"):
+                self._wait_id = 0
+            self._wait_id += 1
+            current_wait_id = self._wait_id
 
         if duration_seconds > 0:
             # Auto-continuar después de duration_seconds
-            def _auto_continue():
+            def _auto_continue(wait_id: int):
                 import time as _t
                 _t.sleep(duration_seconds)
                 with self._lock:
-                    if self._waiting:  # Solo si aún estamos esperando
+                    # Solo autocompletar si seguimos en la MISMA espera
+                    if self._waiting and getattr(self, "_wait_id", -1) == wait_id:
                         self._continue_clicked = True
+                        
                 self._app_root.after(0, self.btn_continue.configure,
                                      {"state": "disabled"})
-            threading.Thread(target=_auto_continue, daemon=True).start()
+            threading.Thread(target=_auto_continue, args=(current_wait_id,), daemon=True).start()
 
         # Activar botón CONTINUAR desde el main thread
         msg = step_msg or "Esperando CONTINUAR..."

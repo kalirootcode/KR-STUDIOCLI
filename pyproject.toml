@@ -1,0 +1,9 @@
+[tool.pyright]
+include = ["kr_studio"]
+exclude = ["**/node_modules", "**/__pycache__", "venv"]
+pythonVersion = "3.10"
+pythonPath = "venv/bin/python"
+executionEnvironments = [{ root = "." }]
+
+[tool.pyre]
+search_path = ["."]

@@ -1,5 +1,6 @@
 import shutil
 import logging
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class HealthChecker:
     }
 
     def run(self) -> dict:
-        results = {"required": {}, "optional": {}, "ok": True}
+        results: typing.Dict[str, typing.Any] = {"required": {}, "optional": {}, "ok": True}
 
         for tool, desc in self.REQUIRED.items():
             path = shutil.which(tool)
