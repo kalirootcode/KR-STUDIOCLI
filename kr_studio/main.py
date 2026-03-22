@@ -36,8 +36,8 @@ def graceful_shutdown(signum=None, frame=None):
 
 
 # Registrar handler para Ctrl+C
-# signal.signal(signal.SIGINT, graceful_shutdown)
-# signal.signal(signal.SIGTERM, graceful_shutdown)
+signal.signal(signal.SIGINT, graceful_shutdown)
+signal.signal(signal.SIGTERM, graceful_shutdown)
 
 
 def main():
@@ -77,7 +77,10 @@ def main():
         sys.exit(1)
     # Iniciar el loop de eventos
     print("DEBUG: Starting mainloop")
-    app.mainloop()
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        graceful_shutdown()
     print("DEBUG: mainloop ended")
 
 

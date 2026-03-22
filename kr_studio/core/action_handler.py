@@ -9,6 +9,7 @@ una arquitectura de software más limpia y desacoplada.
 
 import json
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from kr_studio.core.master_director import MasterDirector, DirectorMode  # type: ignore
@@ -18,6 +19,7 @@ from kr_studio.core.task_manager import TaskManager, TaskType  # type: ignore
 # Para evitar importaciones circulares, usamos TYPE_CHECKING
 if TYPE_CHECKING:
     from kr_studio.ui.main_window import MainWindow  # type: ignore
+    from kr_studio.core.vector_memory import VectorMemory  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,10 @@ class ActionHandler:
     @property
     def ai(self) -> AIEngine:
         return self.ui.ai
+
+    @property
+    def vector_memories(self) -> dict[str, "VectorMemory"]:
+        return self.ui.vector_memories
 
     @property
     def task_manager(self) -> TaskManager:
@@ -136,8 +142,16 @@ class ActionHandler:
                 ):
                     third_party_content = self.ui.third_party_content_var.get()
 
-            # Generar el proyecto pasando todos los parámetros
-            response_text = self.ai.generar_proyecto(
+            # Inyectar la memoria correcta según el modo
+            if content_type:
+                self.ai.memory = self.vector_memories.get("marketing", self.ai.memory)
+            else:
+                self.ai.memory = self.vector_memories.get(
+                    "guion_director", self.ai.memory
+                )
+
+            # --- Generar el proyecto ---
+            final_prompt, response_text = self.ai.generar_proyecto(
                 tendencia=prompt,
                 objetivo_legal=target_ip,
                 content_type=content_type,
@@ -146,26 +160,60 @@ class ActionHandler:
                 duration_min=duration_min,
                 typing_speed=typing_speed,
                 third_party_content=third_party_content,
+                # Pasar la función de actualización del inspector de contexto
+                context_inspector_callback=self.ui._brain_update_context_inspector,
             )
+
+            # --- Actualizar Inspector de Contexto ---
+            if hasattr(self.ui, "_brain_update_context_inspector"):
+                self.ui.after(0, self.ui._brain_update_context_inspector, final_prompt)
 
             json_data = self.ai.extraer_json(response_text)
 
             if json_data:
-                msg = f"✅ Guion generado ({content_type or 'defecto'}) — {len(json_data)} escenas."
+                # --- Guardar en Memoria a Largo Plazo ---
+                doc_id = f"guion_{prompt[:20].replace(' ', '_')}_{str(hash(response_text))[:6]}"
+                memory_to_save_in = self.vector_memories.get(
+                    "marketing" if content_type else "guion_director"
+                )
+                if memory_to_save_in:
+                    # Guardar en un hilo para no bloquear
+                    threading.Thread(
+                        target=memory_to_save_in.add_document,
+                        args=(
+                            f"Prompt: {prompt}\n\nGuion:\n{json.dumps(json_data, indent=2)}",
+                            doc_id,
+                        ),
+                        daemon=True,
+                    ).start()
+
+                msg = f"✅ Guion generado ({content_type or 'defecto'}) — {len(json_data)} escenas. Revisa el editor de JSON."
                 self.ui.after(0, self.ui.append_chat, "DOMINION", msg)
 
                 # Actualizar el editor de la UI desde el hilo principal
                 def update_editor():
                     json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
-                    editor = (
-                        self.ui.editor_b
-                        if self.ui.pre_mode_var
-                        and self.ui.pre_mode_var.get() == "SOLO TERM"
-                        else self.ui.editor
-                    )
+                    # Buscar el editor correcto
+                    editor = None
+                    # Primero intentar con los atributos directos
+                    if hasattr(self.ui, "editor"):
+                        editor = self.ui.editor
+                    if hasattr(self.ui, "editor_b"):
+                        if (
+                            self.ui.pre_mode_var
+                            and self.ui.pre_mode_var.get() == "SOLO TERM"
+                        ):
+                            editor = self.ui.editor_b
+                    # Actualizar el editor
                     if editor:
+                        editor.configure(state="normal")
                         editor.delete("1.0", "end")
                         editor.insert("end", json_str)
+                        editor.configure(state="disabled")
+                        print(f"DEBUG: Editor actualizado con {len(json_data)} escenas")
+                    else:
+                        print("DEBUG: No se encontró editor para actualizar")
+                    # Auto guardar
                     self.ui.auto_save_project(json_data)
                     self.ui.generate_seo_metadata(prompt, json_data)
 

@@ -33,6 +33,7 @@ from kr_studio.ui.components.editor_panel import EditorPanel  # type: ignore
 from kr_studio.ui.components.configuration_panel import ConfigurationPanel  # type: ignore
 from kr_studio.ui.theme import COLORS, get_module_color  # type: ignore
 from kr_studio.core.master_director import MasterDirector, DirectorMode  # type: ignore
+from kr_studio.core.vector_memory import VectorMemory
 from kr_studio.core.video_templates import (
     get_template_list,
     get_presenter_list,
@@ -794,7 +795,23 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         # Inicializar los motores y gestores principales
         self.task_manager = TaskManager()
         print("DEBUG: TaskManager created", flush=True)
-        self.ai = AIEngine("")
+
+        # Inicializar la Súper Memoria de la IA - Director Maestro
+        self.vector_memories = {}
+        compartments = [
+            "conocimiento",  # Conocimiento general del nicho
+            "marketing",  # Estrategias de marketing y viralidad
+            "plantillas",  # Templates de contenido
+            "generado",  # Contenido generado (se auto-guarda)
+            "cursos",  # Contenido para cursos (Hotmart, Udemy)
+            "series",  # Series de videos/posts
+        ]
+        for comp in compartments:
+            self.vector_memories[comp] = VectorMemory(
+                db_path="kr_studio_memory", compartments=[comp]
+            )
+        saved_key = self._load_env_key()
+        self.ai = AIEngine(saved_key, vector_memories=self.vector_memories)
         print("DEBUG: AIEngine created", flush=True)
         self.action_handler = ActionHandler(self)
         print("DEBUG: ActionHandler created", flush=True)
@@ -896,6 +913,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         self.tab2 = self.tabview.add("🎬 Orquestador de Series")
         self.tab3 = self.tabview.add("🎙 Estudio TTS")
         self.tab4 = self.tabview.add("🚀 Marketing Studio")
+        self.tab_brain = self.tabview.add("🧠 Cerebro de la IA")
         self.tab6 = self.tabview.add("🧠 Opencode")
         print("DEBUG: Tabs added", flush=True)
 
@@ -923,9 +941,12 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
         # Tab 4 — Marketing Studio
         self.tab4.grid_rowconfigure(0, weight=1)
-        self.tab4.grid_columnconfigure(0, weight=1)
-        self.tab4.grid_columnconfigure(1, weight=3)
+        # El grid de 3 columnas se configura dentro de _build_marketing_studio
+
         self._build_marketing_studio()
+
+        # Tab Cerebro de la IA
+        self._build_brain_tab()
 
         # Opencode tab layout
         self.tab6.grid_rowconfigure(0, weight=1)
@@ -949,6 +970,221 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             command=self._show_configuration_panel,
         )
         self.btn_open_config.place(relx=1.0, rely=0.0, x=-20, y=10, anchor="ne")
+
+        # ─── POSICIONAR VENTANA ───
+
+    def _build_brain_tab(self):
+        """
+        Construye la pestaña 'Cerebro de la IA' con 3 paneles:
+        1. Gestor de Memoria (Izquierda)
+        2. Chat de Conocimiento (Centro)
+        3. Inspector de Contexto (Derecha)
+        """
+        # Configurar el grid principal de la pestaña
+        self.tab_brain.grid_columnconfigure(0, weight=2)  # Gestor de Memoria
+        self.tab_brain.grid_columnconfigure(1, weight=3)  # Chat
+        self.tab_brain.grid_columnconfigure(2, weight=2)  # Inspector
+        self.tab_brain.grid_rowconfigure(0, weight=1)
+
+        # ════════════════════════════════════════
+        # PANEL IZQUIERDO — Gestor de Memoria
+        # ════════════════════════════════════════
+        memory_panel = ctk.CTkFrame(
+            self.tab_brain,
+            fg_color=COLORS["bg_panel"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        memory_panel.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
+        memory_panel.grid_rowconfigure(2, weight=1)
+        memory_panel.grid_columnconfigure(0, weight=1)
+
+        # Header
+        memory_header = ctk.CTkFrame(
+            memory_panel, fg_color=COLORS["header_bg"], height=40
+        )
+        memory_header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(
+            memory_header,
+            text="🗄️ GESTOR DE MEMORIA",
+            font=("JetBrains Mono", 12, "bold"),
+            text_color="#1E88E5",
+        ).pack(side="left", padx=12)
+
+        # Controles de gestión
+        memory_controls_frame = ctk.CTkFrame(memory_panel, fg_color="transparent")
+        memory_controls_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=8)
+        memory_controls_frame.grid_columnconfigure(0, weight=1)
+        memory_controls_frame.grid_columnconfigure(1, weight=1)
+
+        # Selector de Compartimentos - ocupa toda la fila
+        self.brain_compartment_selector = ctk.CTkComboBox(
+            memory_controls_frame,
+            values=list(self.vector_memories.keys()),
+            height=28,
+            font=("JetBrains Mono", 10),
+            fg_color="#1a1b2e",
+            command=self._brain_update_memory_viewer,
+        )
+        self.brain_compartment_selector.grid(
+            row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6)
+        )
+
+        # Fila de acciones principales
+        self.brain_load_btn = ctk.CTkButton(
+            memory_controls_frame,
+            text="📂 Cargar Archivo",
+            command=self._brain_load_file_to_memory,
+        )
+        self.brain_load_btn.grid(row=1, column=0, sticky="ew", padx=(0, 3))
+
+        self.brain_batch_load_btn = ctk.CTkButton(
+            memory_controls_frame,
+            text="🗂 Batch Cargar",
+            command=self._brain_batch_load_to_memory,
+        )
+        self.brain_batch_load_btn.grid(row=1, column=1, sticky="ew", padx=(3, 0))
+
+        self.brain_clear_btn = ctk.CTkButton(
+            memory_controls_frame,
+            text="💥 Limpiar",
+            fg_color="#D32F2F",
+            hover_color="#C62828",
+            command=self._brain_clear_compartment,
+        )
+        self.brain_clear_btn.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0)
+        )
+
+        # Eliminar por ID
+        del_frame = ctk.CTkFrame(memory_controls_frame, fg_color="transparent")
+        del_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.brain_delete_docid = ctk.CTkEntry(
+            del_frame,
+            font=("JetBrains Mono", 11),
+            placeholder_text="Doc ID a eliminar...",
+        )
+        self.brain_delete_docid.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.brain_delete_btn = ctk.CTkButton(
+            del_frame,
+            text="🗑 Eliminar Doc",
+            width=120,
+            command=self._brain_delete_document,
+        )
+        self.brain_delete_btn.pack(side="left")
+
+        # Visor de Documentos
+        self.brain_memory_viewer = ctk.CTkTextbox(
+            memory_panel,
+            font=("JetBrains Mono", 10),
+            wrap="word",
+            fg_color=COLORS["bg_editor"],
+            border_width=0,
+        )
+        self.brain_memory_viewer.grid(
+            row=2, column=0, sticky="nsew", padx=8, pady=(0, 8)
+        )
+
+        # Carga inicial de documentos
+        self.after(1000, lambda: self._brain_update_memory_viewer(None))
+
+        # ════════════════════════════════════════
+        # PANEL CENTRAL — Chat de Conocimiento
+        # ════════════════════════════════════════
+        chat_panel = ctk.CTkFrame(
+            self.tab_brain,
+            fg_color=COLORS["bg_panel"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        chat_panel.grid(row=0, column=1, sticky="nsew", padx=4, pady=8)
+        chat_panel.grid_rowconfigure(1, weight=1)
+        chat_panel.grid_columnconfigure(0, weight=1)
+
+        # Header
+        chat_header = ctk.CTkFrame(chat_panel, fg_color=COLORS["header_bg"], height=40)
+        chat_header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(
+            chat_header,
+            text="💬 CHAT DE CONOCIMIENTO",
+            font=("JetBrains Mono", 12, "bold"),
+            text_color="#D81B60",
+        ).pack(side="left", padx=12)
+
+        # Historial de chat
+        self.brain_chat_history = ctk.CTkTextbox(
+            chat_panel,
+            font=("JetBrains Mono", 10),
+            wrap="word",
+            fg_color=COLORS["bg_editor"],
+            border_width=0,
+        )
+        self.brain_chat_history.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        self.brain_chat_history.insert(
+            "1.0", "Pregúntale a la IA sobre lo que ha aprendido..."
+        )
+
+        # Entrada de chat
+        chat_input_frame = ctk.CTkFrame(chat_panel, fg_color="transparent")
+        chat_input_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
+        chat_input_frame.grid_columnconfigure(0, weight=1)
+        self.brain_chat_entry = ctk.CTkEntry(
+            chat_input_frame,
+            placeholder_text="Escribe tu pregunta sobre el conocimiento de la IA...",
+            font=("JetBrains Mono", 11),
+        )
+        self.brain_chat_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.brain_chat_entry.bind("<Return>", self._brain_on_send_chat)
+
+        self.brain_chat_send_btn = ctk.CTkButton(
+            chat_input_frame,
+            text="Enviar",
+            width=80,
+            command=self._brain_on_send_chat,
+        )
+        self.brain_chat_send_btn.grid(row=0, column=1)
+
+        # ════════════════════════════════════════
+        # PANEL DERECHO — Inspector de Contexto
+        # ════════════════════════════════════════
+        inspector_panel = ctk.CTkFrame(
+            self.tab_brain,
+            fg_color=COLORS["bg_panel"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        inspector_panel.grid(row=0, column=2, sticky="nsew", padx=(4, 8), pady=8)
+        inspector_panel.grid_rowconfigure(1, weight=1)
+        inspector_panel.grid_columnconfigure(0, weight=1)
+
+        # Header
+        inspector_header = ctk.CTkFrame(
+            inspector_panel, fg_color=COLORS["header_bg"], height=40
+        )
+        inspector_header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(
+            inspector_header,
+            text="🔍 INSPECTOR DE CONTEXTO",
+            font=("JetBrains Mono", 12, "bold"),
+            text_color="#FFB300",
+        ).pack(side="left", padx=12)
+
+        # Visor de contexto
+        self.brain_context_viewer = ctk.CTkTextbox(
+            inspector_panel,
+            font=("JetBrains Mono", 9),
+            wrap="word",
+            fg_color=COLORS["bg_editor"],
+            border_width=0,
+        )
+        self.brain_context_viewer.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        self.brain_context_viewer.insert(
+            "1.0",
+            "Aquí se mostrará el contexto en tiempo real antes de cada generación...",
+        )
 
         # ─── POSICIONAR VENTANA ───
 
@@ -2564,6 +2800,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         ).pack(side="left", padx=12)
 
         # Campo para el tema del curso
+        syllabus_topic_frame = ctk.CTkFrame(syllabus_panel, fg_color="transparent")
         syllabus_topic_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=8)
         self.mkt_course_topic_entry = ctk.CTkEntry(
             syllabus_topic_frame,
@@ -7957,3 +8194,449 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         # In a real implementation, we would not stop here but continue the cycle if the project is not complete.
         # We would check if the project is complete based on the execution result and the AI's analysis.
         # For this demonstration, we stop after one cycle.
+
+    # -------------------------------------------------------------------------
+    # MÉTODOS DE LA PESTAÑA "CEREBRO DE LA IA"
+    # -------------------------------------------------------------------------
+
+    def _brain_update_memory_viewer(self, selected_compartment: str = None):
+        """Actualiza el visor de memoria con los documentos del compartimento seleccionado."""
+        if selected_compartment is None:
+            # Si no se especifica, toma la selección actual
+            if (
+                hasattr(self, "brain_compartment_selector")
+                and self.brain_compartment_selector
+            ):
+                selected_compartment = self.brain_compartment_selector.get()
+            else:
+                return
+
+        if not selected_compartment or selected_compartment not in self.vector_memories:
+            return
+
+        memory = self.vector_memories[selected_compartment]
+        documents = memory.get_documents_for_compartment(selected_compartment)
+
+        self.brain_memory_viewer.delete("1.0", "end")
+        if not documents:
+            self.brain_memory_viewer.insert(
+                "1.0", f"El compartimento '{selected_compartment}' está vacío."
+            )
+        else:
+            content = (
+                f"--- Documentos en '{selected_compartment}' ({len(documents)}) ---\n\n"
+            )
+            for doc in documents:
+                content += f"ID: {doc['id']}\n"
+                content += f"Contenido: {doc['content'][:150].strip()}...\n"
+                content += "-" * 40 + "\n\n"
+            self.brain_memory_viewer.insert("1.0", content)
+
+    def _brain_load_file_to_memory(self):
+        """Carga un archivo de texto en el compartimento de memoria seleccionado."""
+        selected_compartment = self.brain_compartment_selector.get()
+        if not selected_compartment or selected_compartment not in self.vector_memories:
+            return
+
+        filepath = filedialog.askopenfilename(
+            title="Seleccionar archivo de conocimiento (.txt, .md)",
+            filetypes=(
+                ("Text files", "*.txt"),
+                ("Markdown files", "*.md"),
+                ("All files", "*.*"),
+            ),
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            doc_id = os.path.basename(filepath)
+
+            memory = self.vector_memories[selected_compartment]
+            memory.add_document(text=content, doc_id=doc_id)
+
+            self._brain_update_memory_viewer(selected_compartment)
+            self.append_chat(
+                "Cerebro de la IA",
+                f"✅ Conocimiento del archivo '{doc_id}' añadido a '{selected_compartment}'.",
+            )
+
+        except Exception as e:
+            self.append_chat("Cerebro de la IA", f"❌ Error al cargar el archivo: {e}")
+
+    def _brain_batch_load_to_memory(self):
+        """Carga múltiples archivos (.txt/.md) de una carpeta en el compartimento seleccionado."""
+        selected_compartment = None
+        if (
+            hasattr(self, "brain_compartment_selector")
+            and self.brain_compartment_selector
+        ):
+            selected_compartment = self.brain_compartment_selector.get()
+        if not selected_compartment or selected_compartment not in self.vector_memories:
+            return
+        dirpath = filedialog.askdirectory(
+            title="Seleccionar carpeta conocimiento (archivos .txt/.md)"
+        )
+        if not dirpath:
+            return
+        memory = self.vector_memories[selected_compartment]
+        loaded = 0
+        for root, _, files in os.walk(dirpath):
+            for fname in files:
+                if not fname.lower().endswith((".txt", ".md")):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    base = os.path.basename(fname)
+                    doc_id = (
+                        f"{os.path.splitext(base)[0]}_{abs(hash(content)) % 1000000}"
+                    )
+                    memory.add_document(
+                        text=content, doc_id=doc_id, compartment=selected_compartment
+                    )
+                    loaded += 1
+                except Exception as e:
+                    self.append_chat(
+                        "Cerebro de la IA", f"❌ Error cargando '{fpath}': {e}"
+                    )
+        self._brain_update_memory_viewer(selected_compartment)
+        self.append_chat(
+            "Cerebro de la IA",
+            f"✅ Batch cargado. Archivos procesados: {loaded} en '{selected_compartment}'.",
+        )
+
+    def _brain_clear_compartment(self):
+        """Limpia todos los documentos del compartimento seleccionado."""
+        selected_compartment = self.brain_compartment_selector.get()
+        if not selected_compartment or selected_compartment not in self.vector_memories:
+            return
+
+        user_response = tk.messagebox.askyesno(
+            "Confirmar Limpieza",
+            f"¿Estás seguro de que quieres borrar TODA la memoria del compartimento '{selected_compartment}'?\n\nEsta acción es irreversible.",
+        )
+
+        if user_response:
+            try:
+                memory = self.vector_memories[selected_compartment]
+                memory.clear_all()
+                self._brain_update_memory_viewer(selected_compartment)
+                self.append_chat(
+                    "Cerebro de la IA",
+                    f"💥 Memoria del compartimento '{selected_compartment}' ha sido limpiada.",
+                )
+            except Exception as e:
+                self.append_chat(
+                    "Cerebro de la IA", f"❌ Error al limpiar la memoria: {e}"
+                )
+
+    def _brain_delete_document(self):
+        """Borra un documento específico de la memoria del compartimento actual."""
+        selected_compartment = None
+        if hasattr(self, "brain_compartment_selector"):
+            selected_compartment = self.brain_compartment_selector.get()
+        doc_id = getattr(self, "brain_delete_docid", None)
+        if not selected_compartment or not getattr(doc_id, "get", None):
+            return
+        doc_id_val = self.brain_delete_docid.get()
+        if not doc_id_val:
+            return
+
+        try:
+            memory = self.vector_memories.get(selected_compartment)
+            if memory:
+                memory.delete_document(doc_id_val, compartment=selected_compartment)
+                self._brain_update_memory_viewer(selected_compartment)
+                self.append_chat(
+                    "Cerebro de la IA",
+                    f"🗑 Documento '{doc_id_val}' eliminado de '{selected_compartment}'.",
+                )
+                self.brain_delete_docid.delete(0, "end")
+        except Exception as e:
+            self.append_chat("Cerebro de la IA", f"❌ Error al eliminar documento: {e}")
+
+    def _brain_on_send_chat(self, event=None):
+        """Maneja el envío de un mensaje en el Chat de Conocimiento."""
+        user_query = self.brain_chat_entry.get()
+        if not user_query:
+            return
+
+        self.brain_chat_entry.delete(0, "end")
+        self._add_to_brain_chat("Tú", user_query)
+
+        # Detectar comandos especiales del Director Maestro
+        cmd = user_query.lower().strip()
+
+        if cmd.startswith("genera post:"):
+            self._director_generar_post(user_query)
+            return
+        elif cmd.startswith("genera articulo:"):
+            self._director_generar_articulo(user_query)
+            return
+        elif cmd.startswith("genera curso:"):
+            self._director_generar_curso(user_query)
+            return
+        elif cmd.startswith("genera serie:"):
+            self._director_generar_serie(user_query)
+            return
+        elif cmd.startswith("genera video:"):
+            self._director_generar_video(user_query)
+            return
+        elif cmd.startswith("estrategia:"):
+            self._director_generar_estrategia(user_query)
+            return
+        elif cmd.startswith("ayuda director"):
+            self._mostrar_ayuda_director()
+            return
+
+        # Modo normal: buscar en memoria
+        all_context = []
+        for name, memory in self.vector_memories.items():
+            results = memory.search(user_query, n_results=2)
+            if results:
+                for res in results:
+                    doc_id = res.get("id", "desconocido")
+                    content = res.get("content", "")[:500]
+                    all_context.append(
+                        f"📄 Documento: '{doc_id}'\n"
+                        f"   Compartimento: {name}\n"
+                        f"   Contenido: {content}..."
+                    )
+
+        context_str = (
+            "\n\n" + "=" * 50 + "\n\n".join(all_context) + "\n" + "=" * 50
+            if all_context
+            else "No se encontró información relevante en la memoria."
+        )
+
+        prompt = f"""Eres el asistente de conocimiento de KR-STUDIO. Tu trabajo es responder a las preguntas del usuario basándote ÚNICAMENTE en el conocimiento que tienes almacenado en tu memoria a largo plazo.
+
+Aquí está el conocimiento relevante que he encontrado en tu memoria sobre la pregunta del usuario:
+
+[CONOCIMIENTO RECUPERADO DE LA MEMORIA]
+{context_str}
+[FIN DEL CONOCIMIENTO RECUPERADO]
+
+Pregunta del usuario: "{user_query}"
+
+Tu tarea:
+1. Lee el [CONOCIMIENTO RECUPERADO] y sintetiza una respuesta directa y clara a la pregunta del usuario.
+2. Si el conocimiento recuperado no es suficiente para responder, di que no tienes información sobre ese tema específico en tu memoria. NO inventes respuestas.
+3. Cita la fuente usando el nombre del documento entre comillas (ej: "Según el documento 'mi_guia_github.md'...").
+4. Sé conciso y ve al grano."""
+
+        # Actualizar el Inspector de Contexto
+        self.after(0, self._brain_update_context_inspector, prompt)
+
+        def generation_thread():
+            try:
+                # Usamos el AIEngine principal para el chat, pero sin pasarle memoria de proyectos (ya está en el prompt)
+                response = self.ai.chat(prompt)
+                self.after(0, self._add_to_brain_chat, "IA", response)
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error de IA: {e}")
+
+        self._add_to_brain_chat("IA", "🧠 Pensando...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _add_to_brain_chat(self, user: str, message: str):
+        """Añade un mensaje al historial del Chat de Conocimiento."""
+        self.brain_chat_history.configure(state="normal")
+        self.brain_chat_history.insert("end", f"[{user}]\n{message.strip()}\n\n")
+        self.brain_chat_history.configure(state="disabled")
+        self.brain_chat_history.see("end")
+
+    def _brain_update_context_inspector(self, final_prompt: str):
+        """Actualiza el Inspector de Contexto con el prompt final enviado a la IA."""
+        self.brain_context_viewer.configure(state="normal")
+        self.brain_context_viewer.delete("1.0", "end")
+        self.brain_context_viewer.insert("1.0", final_prompt)
+        self.brain_context_viewer.configure(state="disabled")
+
+    def _mostrar_ayuda_director(self):
+        """Muestra la ayuda de comandos del Director Maestro."""
+        ayuda = """🎬 COMANDOS DEL DIRECTOR MAESTRO:
+
+1️⃣ genera post: [tema] - Genera post optimizado para redes sociales
+   Ejemplo: genera post: SQL Injection
+
+2️⃣ genera articulo: [tema] - Genera artículo completo con SEO
+   Ejemplo: genera articulo: Cómo empezar en ciberseguridad
+
+3️⃣ genera curso: [tema] - Genera estructura de módulo para curso
+   Ejemplo: genera curso: Hacking Ético desde Cero
+
+4️⃣ genera serie: [tema] - Genera estructura de serie de episodios
+   Ejemplo: genera serie: Fundamentos de Networking
+
+5️⃣ genera video: [tema] - Genera guion completo para video
+   Ejemplo: genera video: Instalación de Kali Linux
+
+6️⃣ estrategia: [objetivo] - Genera estrategia de marketing
+   Ejemplo: estrategia: Aumentar ventas de curso de seguridad
+
+💡 También puedes hacer preguntas normales sobre el conocimiento cargado."""
+        self._add_to_brain_chat("IA", ayuda)
+
+    def _director_generar_post(self, query: str):
+        """Genera un post usando el Director Maestro."""
+        tema = query.replace("genera post:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_post_social(tema)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"📱 POST GENERADO:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando post...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _director_generar_articulo(self, query: str):
+        """Genera un artículo usando el Director Maestro."""
+        tema = query.replace("genera articulo:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_articulo(tema)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"📝 ARTÍCULO GENERADO:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando artículo...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _director_generar_curso(self, query: str):
+        """Genera estructura de curso usando el Director Maestro."""
+        tema = query.replace("genera curso:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_modulo_curso(tema)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"🎓 MÓDULO DE CURSO GENERADO:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando módulo de curso...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _director_generar_serie(self, query: str):
+        """Genera estructura de serie usando el Director Maestro."""
+        tema = query.replace("genera serie:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_serie(tema)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"📺 SERIE GENERADA:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando serie...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _director_generar_video(self, query: str):
+        """Genera guion de video usando el Director Maestro."""
+        tema = query.replace("genera video:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_guion_video(tema)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"🎬 GUION DE VIDEO GENERADO:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando guion de video...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    def _director_generar_estrategia(self, query: str):
+        """Genera estrategia de marketing usando el Director Maestro."""
+        objetivo = query.replace("estrategia:", "").strip()
+
+        def generation_thread():
+            try:
+                if self.ai.director:
+                    prompt = self.ai.director.generar_estrategia_marketing(objetivo)
+                    self._brain_update_context_inspector(prompt)
+                    response = self.ai.chat(prompt)
+                    self.after(
+                        0,
+                        self._add_to_brain_chat,
+                        "IA",
+                        f"📊 ESTRATEGIA GENERADA:\n\n{response}",
+                    )
+                else:
+                    self.after(
+                        0, self._add_to_brain_chat, "IA", "❌ Director no disponible"
+                    )
+            except Exception as e:
+                self.after(0, self._add_to_brain_chat, "Error", f"Error: {e}")
+
+        self._add_to_brain_chat("IA", "🎬 Generando estrategia de marketing...")
+        threading.Thread(target=generation_thread, daemon=True).start()
+
+    # -------------------------------------------------------------------------

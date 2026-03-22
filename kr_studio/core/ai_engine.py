@@ -12,6 +12,9 @@ from kr_studio.core.targets_db import (
 )
 from kr_studio.core.video_templates import get_content_prompt, build_video_config_block
 from kr_studio.core.video_templates import build_video_config_block
+from kr_studio.core.vector_memory import VectorMemory
+from kr_studio.core.personality import get_personality
+from kr_studio.core.director_maestro import DirectorMaestro
 import typing
 
 logger = logging.getLogger(__name__)
@@ -19,18 +22,10 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_TEMPLATE = """Eres un instructor profesional de ciberseguridad, analista de vulnerabilidades y hacking ético.
 Tu trabajo es crear guiones educativos de alto nivel técnico para videos cortos de demostración usando KR-CLI DOMINION.
 
-TU PERSONALIDAD:
-- TÉCNICO Y PRECISO: Explica conceptos con rigor técnico. Usa terminología real de ciberseguridad.
-- CARISMÁTICO Y CERCANO: Habla como un mentor de confianza. Sé amable, accesible y profesional.
-- EDUCATIVO Y SEGURO: Cada guion debe transmitir confianza y seguridad. El espectador debe sentirse en manos de un experto.
-- SIN HUMOR NEGRO NI LENGUAJE AGRESIVO: Nada de insultos, bromas oscuras ni lenguaje intimidante. Sé inspirador y motivador.
-- TONO NATURAL Y FLUIDO: Las narraciones TTS deben sonar como un profesional hablando naturalmente, no como un robot.
+{personality_section}
 
 REGLAS DE VOZ TTS:
-- Escribe las narraciones como si fueras un profesor carismático explicando a un colega.
-- Evita signos de exclamación excesivos. Usa un tono calmado y seguro.
-- NO uses emojis en el campo "voz" — solo texto limpio para que el TTS suene natural.
-- Usa puntos y comas para crear pausas naturales en la narración.
+{personality_tts}
 
 REGLAS DE PRONUNCIACIÓN DE COMANDOS (OBLIGATORIO APLICAR):
 - Al mencionar comandos en el campo "voz", el TTS debe pronunciarlos correctamente.
@@ -151,11 +146,28 @@ REGLAS ESTRICTAS:
 
 
 class AIEngine:
-    def __init__(self, api_key: str, workspace_dir: typing.Optional[str] = None):
+    def __init__(
+        self,
+        api_key: str,
+        workspace_dir: typing.Optional[str] = None,
+        memory: typing.Optional[VectorMemory] = None,
+        vector_memories: typing.Optional[typing.Dict[str, VectorMemory]] = None,
+    ):
         self.api_key = api_key
         self.client: typing.Any = None
         self.model: typing.Any = None
         self.chat_session: typing.Any = None
+        self.memory = memory
+        # Si no se proporcionó memoria en el constructor, inicializamos una VectorMemory
+        # por defecto para habilitar recuperación de contexto durante la generación.
+        if self.memory is None:
+            self.memory = VectorMemory()
+
+        # Director Maestro para generación de contenido diverso
+        self.vector_memories = vector_memories or {}
+        self.director: typing.Optional[DirectorMaestro] = None
+        if self.vector_memories:
+            self.director = DirectorMaestro(self.vector_memories)
 
         # Configuración de video (se actualiza desde la UI)
         self.video_type = "tutorial_profundo"
@@ -209,10 +221,13 @@ class AIEngine:
                 extra_notes=getattr(self, "extra_notes", ""),
             )
 
+            personality = get_personality()
             dynamic_system_prompt = (
                 SYSTEM_PROMPT_TEMPLATE.replace("{memory_context}", memory_ctx)
                 .replace("{labs_context}", labs_ctx)
                 .replace("{video_config}", video_config_block)
+                .replace("{personality_section}", personality.get_system_prompt_addon())
+                .replace("{personality_tts}", personality.get_tts_instructions())
             )
 
             self.chat_session = self.client.chats.create(
@@ -341,21 +356,22 @@ Solo el JSON, nada más."""
         except Exception as e:
             raise RuntimeError(f"Error en búsqueda OSINT: {e}")
 
-     # ─────────────────────────────────────────────
-     # GENERADOR DE PROYECTO CON TARGET LEGAL
-     # ─────────────────────────────────────────────
+    # ─────────────────────────────────────────────
+    # GENERADOR DE PROYECTO CON TARGET LEGAL
+    # ─────────────────────────────────────────────
 
     def generar_proyecto(
-         self,
-         tendencia: str,
-         objetivo_legal: str | None = None,
-         content_type: str | None = None,
-         modo: str | None = None,
-         formato: str | None = None,
-         duration_min: int = 5,
-         typing_speed: int = 80,
-         third_party_content: bool = False,
-     ) -> str:
+        self,
+        tendencia: str,
+        objetivo_legal: str | None = None,
+        content_type: str | None = None,
+        modo: str | None = None,
+        formato: str | None = None,
+        duration_min: int = 5,
+        typing_speed: int = 80,
+        third_party_content: bool = False,
+        context_inspector_callback: typing.Optional[typing.Callable] = None,
+    ) -> tuple[str, str]:
         """
         Genera un guion inyectando el lab correcto automáticamente.
         Si se provee objetivo_legal se respeta; si no, se selecciona automáticamente.
@@ -367,6 +383,32 @@ Solo el JSON, nada más."""
         """
         if not self.chat_session:
             raise RuntimeError("API Key no configurada.")
+
+        # --- RECUPERACIÓN DE MEMORIA A LARGO PLAZO (RAG) ---
+        long_term_memory_context = ""
+        if self.memory:
+            logger.info(f"Buscando en memoria a largo plazo sobre: '{tendencia}'")
+            search_results = self.memory.search(tendencia, n_results=2)
+            if search_results:
+                # Convertir diccionarios a strings para join
+                context_items = []
+                for res in search_results:
+                    if isinstance(res, dict):
+                        context_items.append(
+                            f"[{res.get('id', 'unknown')}]: {res.get('content', '')}"
+                        )
+                    else:
+                        context_items.append(str(res))
+                context_str = "\n\n---\n\n".join(context_items)
+                long_term_memory_context = f"""
+[MEMORIA DE PROYECTOS ANTERIORES - ÚSALO COMO CONTEXTO]
+He encontrado estos guiones o documentos relevantes en mi memoria de proyectos que has hecho antes. Úsalos para mantener la coherencia, evitar repeticiones y entender mejor la petición actual.
+
+{context_str}
+
+[FIN DE LA MEMORIA]
+"""
+                logger.info("Contexto de memoria a largo plazo inyectado en el prompt.")
 
         if objetivo_legal:
             lab_bloque = (
@@ -454,24 +496,56 @@ El formato es horizontal para YouTube. Puedes usar comandos que muestren más in
         if third_party_content:
             third_party_instruction = """
 [MODO CONTENIDO DE TERCERO ACTIVADO]
-OBLIGATORIO: Estás generando un guion para CONTENIDO DE TERCERO (tutoriales, demostraciones, etc.).
-REGLAS ESTRICTAS PARA CONTENIDO DE TERCERO:
-1. El usuario proporciona un prompt completo con los pasos exactos que deben seguirse (ej: instalar un repo, usar una herramienta, etc.).
-2. Tu trabajo es generar un guion profesional que narre y explique cada paso del prompt del usuario, sin agregar ni quitar información técnica.
-3. NO inventes comandos ni pasos adicionales - sigue exactamente lo que el usuario especificó en su prompt.
-4. Incluye narraciones educativas que expliquen QUÉ hace cada comando, POR QUÉ es necesario y CÓMO interpretar los resultados.
-5. Mantén el flujo natural: introducción → explicación de cada paso → conclusión.
-6. Para tutoriales de repositorios o herramientas, incluye:
-   - Breve introducción sobre qué es la herramienta/repo y para qué sirve
-   - Explicación clara de cada comando del prompt del usuario
-   - Narración que conecta cada paso con el objetivo general
-   - Conclusión que resume lo aprendido y su utilidad práctica
-7. El JSON debe contener escenas de 'narracion' para la explicación y opcionalmente 'ejecucion' si se deben mostrar comandos en terminal.
-8. Si el modo es SOLO_TERM, enfócate en ejecutar y narrar los comandos directamente.
-9. Si el modo es DUAL_AI, sigue el flujo normal pero adaptando el contenido al prompt del usuario.
-10. La duración debe respetarse según los parámetros proporcionados, distribuyendo el tiempo entre introducción, explicación de pasos y conclusión.
+OBLIGATORIO: Estás generando un guion para videos con CONTENIDO EXTERNO (herramientas, repositorios, páginas web, programas).
+
+DETECCIÓN AUTOMÁTICA:
+- Detecta cuando el usuario menciona URLs (github.com, gitlab.com, etc.)
+- Detecta nombres de herramientas/programas específicos
+- Detecta referencias a contenido externo ("mostrando X", "usando Y", "el repo de Z")
+
+ESTRUCTURA DE ESCENAS PARA CONTENIDO EXTERNO:
+1. INTRODUCCIÓN: Presenta el tema y menciona el recurso externo
+2. MOSTRAR RECURSO: Usa campo "indicador" para decirle al editor qué abrir
+3. NARRACIÓN: Explica mientras se muestra el contenido
+4. TRANSICIÓN: Indica cambios entre contenido propio y externo
+5. ANÁLISIS: Reflexiona sobre lo mostrado
+
+FORMATO JSON PARA CONTENIDO EXTERNO:
+{
+  "tipo": "narracion",
+  "voz": "Texto de narración para el audio",
+  "visual": "Descripción de lo que se muestra en pantalla",
+  "timestamp": "0:00",
+  "indicador": "ABRIR https://github.com/repo EN NAVEGADOR"
+}
+
+INDICADORES VÁLIDOS PARA EL EDITOR:
+- "ABRIR [URL] EN NAVEGADOR"
+- "MOSTRAR [NOMBRE] EN PANTALLA"
+- "GRABAR [PROGRAMA/HERAMIENTA] EN ACCIÓN"
+- "TRANSICIÓN A TERMINAL"
+- "CAMBIAR A [VENTANA/PROGRAMA]"
+- "PAUSA PARA VER [CONTENIDO]"
+
+REGLAS OBLIGATORIAS:
+1. SIEMPRE incluye campo "indicador" cuando muestres contenido externo
+2. DA tiempo al espectador para observar (usa "pausa" o timestamps generosos)
+3. NARRAR mientras se muestra el contenido, no antes ni después
+4. EXPLICAR qué se ve y por qué es importante
+5. CONECTAR el contenido externo con el tema principal del video
+6. El campo "visual" debe describir claramente qué se espera ver
+7. Usa timestamps para facilitar la edición post-producción
+
+EJEMPLO DE ESCENA CON CONTENIDO EXTERNO:
+{
+  "tipo": "narracion",
+  "voz": "Aquí pueden ver el repositorio oficial de la herramienta. Tómense un momento para explorar.",
+  "visual": "PÁGINA DE GITHUB DEL REPOSITORIO",
+  "timestamp": "0:30",
+  "indicador": "ABRIR https://github.com/usuario/repo EN NAVEGADOR"
+}
 """
-        
+
         # Instrucciones de duración y velocidad
         escenas_aprox = duration_min * 6
         dur_speed_instruction = f"""
@@ -482,10 +556,10 @@ REGLAS ESTRICTAS PARA CONTENIDO DE TERCERO:
 - Si son 5-10 minutos o más, profundiza con múltiples comandos, análisis exhaustivo, y ejemplos prácticos variados.
 - La velocidad de tipeo actual (Delay) está configurada a {typing_speed}ms por tecla.
 """
-        prompt = f"{prompt}\n{third_party_instruction}\n{dur_speed_instruction}"
+        prompt_final = f"{long_term_memory_context}\n{prompt}\n{third_party_instruction}\n{dur_speed_instruction}"
 
         try:
-            response = self.chat_session.send_message(prompt)
-            return response.text
+            response = self.chat_session.send_message(prompt_final)
+            return prompt_final, response.text
         except Exception as e:
             raise RuntimeError(f"Error generando proyecto: {e}")
