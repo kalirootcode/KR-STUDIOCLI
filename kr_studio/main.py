@@ -36,8 +36,8 @@ def graceful_shutdown(signum=None, frame=None):
 
 
 # Registrar handler para Ctrl+C
-signal.signal(signal.SIGINT, graceful_shutdown)
-signal.signal(signal.SIGTERM, graceful_shutdown)
+# signal.signal(signal.SIGINT, graceful_shutdown)
+# signal.signal(signal.SIGTERM, graceful_shutdown)
 
 
 def main():
@@ -50,15 +50,35 @@ def main():
     # Crear ventana raíz
     app = ctk.CTk()
     app.title("KR-STUDIO — Script-to-Screen IDE")
+
+    # Iniciar maximizado lo antes posible para evitar flickering
+    try:
+        app.state("zoomed")
+    except Exception:
+        try:
+            app.attributes("-zoomed", True)
+        except Exception:
+            pass
+
     app.minsize(900, 600)
 
     _app_instance = app
 
     # Instanciar la interfaz principal
-    main_window = MainWindow(app)
+    try:
+        main_window = MainWindow(app)
+        print("DEBUG: MainWindow created")
+    except Exception as e:
+        print("DEBUG: Failed to create MainWindow:", e)
+        import traceback
 
+        traceback.print_exc()
+        app.destroy()
+        sys.exit(1)
     # Iniciar el loop de eventos
+    print("DEBUG: Starting mainloop")
     app.mainloop()
+    print("DEBUG: mainloop ended")
 
 
 if __name__ == "__main__":

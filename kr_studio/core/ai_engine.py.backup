@@ -345,7 +345,7 @@ Solo el JSON, nada más."""
      # GENERADOR DE PROYECTO CON TARGET LEGAL
      # ─────────────────────────────────────────────
 
-    def generar_proyecto(
+     def generar_proyecto(
          self,
          tendencia: str,
          objetivo_legal: str | None = None,

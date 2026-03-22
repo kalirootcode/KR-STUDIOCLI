@@ -1,0 +1,7 @@
+customtkinter
+python-dotenv
+google-generativeai
+Pillow
+pygame
+chromadb-client
+sentence-transformers

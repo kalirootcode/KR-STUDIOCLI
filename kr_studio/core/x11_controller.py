@@ -29,41 +29,50 @@ class X11Controller:
         speed_pct: int = 80,
         delay_ms: typing.Optional[int] = None,
     ):
-        """Escribe una cadena de texto con un delay entre cada tecla."""
+        """Escribe una cadena de texto directamente en una ventana específica."""
         if speed_pct < 100:
             calculated_delay = int(120 + (100 - speed_pct) * 4)
         else:
             calculated_delay = max(5, int(120 - (speed_pct - 100)))
         delay = delay_ms if delay_ms is not None else calculated_delay
-        self.focus_window(wid)
+
         try:
-            subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", "--delay", str(delay), text],
+            # Comando más robusto que no depende del foco
+            logger.info(f"x11: Escribiendo en WID {wid} (delay: {delay}ms)")
+            result = subprocess.run(
+                [
+                    "xdotool",
+                    "type",
+                    "--window",
+                    wid,
+                    "--clearmodifiers",
+                    "--delay",
+                    str(delay),
+                    text,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
+            if result.returncode != 0:
+                logger.error(f"xdotool type failed (WID: {wid}): {result.stderr}")
         except Exception as e:
-            logger.warning(f"type_text falló: {e}")
+            logger.error(f"type_text falló: {e}")
 
     def send_key(self, wid: str, key: str):
-        self.focus_window(wid)
+        """Envía una tecla a una ventana específica."""
         try:
             logger.info(f"x11: Enviando tecla '{key}' a ventana {wid}")
             result = subprocess.run(
-                ["xdotool", "key", "--clearmodifiers", key],
+                ["xdotool", "key", "--window", wid, "--clearmodifiers", key],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             if result.returncode != 0:
-                logger.warning(
-                    f"xdotool key returncode: {result.returncode}, stderr: {result.stderr}"
-                )
-            else:
-                logger.info(f"xdotool key exitosamente enviado")
+                logger.error(f"xdotool key failed (WID: {wid}): {result.stderr}")
         except Exception as e:
-            logger.warning(f"send_key falló: {e}")
+            logger.error(f"send_key falló: {e}")
 
     def resize_window(self, wid: str, w: int = 450, h: int = 800):
         try:

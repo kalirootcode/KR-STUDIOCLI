@@ -69,11 +69,10 @@ RITMO NARRATIVO:
 # ═══════════════════════════════════════════════════════════════════
 
 VIDEO_TEMPLATES = {
-
     # ──────────────────────────────────────────────
     "viral_short": {
-        "nombre":      "Video Viral (Shorts/Reels)",
-        "icono":       "🔥",
+        "nombre": "Video Viral (Shorts/Reels)",
+        "icono": "🔥",
         "descripcion": "5-90 segundos. Hook brutal, resultado inmediato, máximo impacto.",
         "duracion_recomendada": "1-2 min",
         "escenas_recomendadas": "5-8",
@@ -105,11 +104,10 @@ REGLAS VIRALES ESTRICTAS:
   - Terminar con pregunta que genere comentarios
 """,
     },
-
     # ──────────────────────────────────────────────
     "tutorial_profundo": {
-        "nombre":      "Tutorial Profundo",
-        "icono":       "📚",
+        "nombre": "Tutorial Profundo",
+        "icono": "📚",
         "descripcion": "Enseñanza paso a paso. El espectador sale sabiendo hacerlo solo.",
         "duracion_recomendada": "8-15 min",
         "escenas_recomendadas": "15-25",
@@ -150,11 +148,10 @@ REGLAS DE PEDAGOGÍA:
   - Checkpoints: cada 3 minutos resumir lo aprendido hasta ese punto
 """,
     },
-
     # ──────────────────────────────────────────────
     "curso_capitulo": {
-        "nombre":      "Capítulo de Curso",
-        "icono":       "🎓",
+        "nombre": "Capítulo de Curso",
+        "icono": "🎓",
         "descripcion": "Parte de una serie estructurada. Construye sobre el capítulo anterior.",
         "duracion_recomendada": "10-20 min",
         "escenas_recomendadas": "18-30",
@@ -196,11 +193,10 @@ ELEMENTOS DE FIDELIZACIÓN:
   - Reto de práctica al final: "prueba hacer esto y comenta tu resultado"
 """,
     },
-
     # ──────────────────────────────────────────────
     "exposicion_vulnerabilidad": {
-        "nombre":      "Exposición de Vulnerabilidad",
-        "icono":       "💀",
+        "nombre": "Exposición de Vulnerabilidad",
+        "icono": "💀",
         "descripcion": "Revelar una vulnerabilidad real con impacto dramático y educativo.",
         "duracion_recomendada": "5-10 min",
         "escenas_recomendadas": "12-18",
@@ -242,11 +238,10 @@ REGLAS DE IMPACTO:
   - Terminar con "¿qué otras vulnerabilidades quieres que examinemos?"
 """,
     },
-
     # ──────────────────────────────────────────────
     "marketing_herramienta": {
-        "nombre":      "Marketing de Herramienta/Producto",
-        "icono":       "🚀",
+        "nombre": "Marketing de Herramienta/Producto",
+        "icono": "🚀",
         "descripcion": "Presentar una herramienta mostrando su valor real en acción.",
         "duracion_recomendada": "3-8 min",
         "escenas_recomendadas": "10-16",
@@ -286,11 +281,10 @@ REGLAS DE MARKETING TÉCNICO:
   - Métrica de impacto obligatoria: velocidad, precisión, o cobertura
 """,
     },
-
     # ──────────────────────────────────────────────
     "osint_investigacion": {
-        "nombre":      "OSINT / Investigación en Vivo",
-        "icono":       "🔍",
+        "nombre": "OSINT / Investigación en Vivo",
+        "icono": "🔍",
         "descripcion": "Investigación de inteligencia abierta en tiempo real. Narrativa detectivesca.",
         "duracion_recomendada": "8-15 min",
         "escenas_recomendadas": "15-22",
@@ -331,18 +325,17 @@ TÉCNICAS NARRATIVAS DETECTIVESCAS:
   - Usa "interesante...", "mira esto", "no esperaba encontrar esto aquí"
 """,
     },
-
     # ──────────────────────────────────────────────
     "comparativa_batalla": {
-        "nombre":      "Comparativa / Batalla de Herramientas",
-        "icono":       "⚔️",
+        "nombre": "Comparativa / Batalla de Herramientas",
+        "icono": "⚔️",
         "descripcion": "Dos herramientas, mismo objetivo. ¿Cuál gana? Alta retención por el suspenso.",
         "duracion_recomendada": "6-12 min",
         "escenas_recomendadas": "14-20",
         "estructura": """
 [TIPO DE VIDEO: COMPARATIVA / BATALLA — SUSPENSO Y CONCLUSIÓN DEFINITIVA]
 
-FILOSOFÍA: El debate es el motor de engagement. El espectador toma partido.
+FILOSOFÍA: El debate es el motor de engagement. El spectator toma partido.
            La conclusión debe ser clara, argumentada y sorprendente.
 
 ESTRUCTURA OBLIGATORIA:
@@ -375,7 +368,71 @@ REGLAS DE ENTRETENIMIENTO TÉCNICO:
   - El suspenso del ganador debe mantenerse hasta el final
   - Nunca favorecer una desde el inicio (fake neutrality hasta el veredicto)
   - Los comentarios de "yo prefiero X" son el objetivo de engagement
-  - Incluir una herramienta "dark horse" poco conocida para sorprender
+  - Incluir una herramienta "dark horse" poco conocida para sorpresa
+""",
+    },
+    # ──────────────────────────────────────────────
+    "curso_profesional": {
+        "nombre": "Curso Profesional (kr-clidn Academy)",
+        "icono": "🎓",
+        "descripcion": "Curso estructurado de ciberseguridad con certificación y práctica en tu PC.",
+        "duracion_recomendada": "15-30 min por módulo",
+        "escenas_recomendadas": "12-20",
+        "estructura": """
+[TIPO DE CONTENIDO: CURSO PROFESIONAL - kr-clidn Academy]
+
+FILOSOFÍA: Este es un curso profesional diseñado para transformar al estudiante en experto.
+           Cada módulo construye sobre el anterior. El estudiante termina con habilidades reales.
+
+PERSONAJE: KR-CLDN (Instructor de Ciberseguridad)
+- TÉCNICO Y PRECISO: Dominio profundo de cada tema.
+- CARISMÁTICO Y CERCANO: Habla como mentor experimentado.
+- MOTIVADOR: Inspira confianza y hace el aprendizaje addictive.
+- PRACTICO: Todo concepto se demuestra con comandos reales.
+
+REGLAS DE PRONUNCIACIÓN (OBLIGATORIO):
+- Campo "comando_visual": comando técnico original
+- Campo "voz": versión pronunciable y natural
+- nmap → "enemap", -sV → "menos ese ve", | → "pipe"
+
+ESTRUCTURA DEL MÓDULO:
+  FASE 1 — HOOK (1-2 min):
+    Dato impactante o pregunta directa que capture atención
+    "¿Sabías que el 73% de los ataques empiezan así?"
+    
+  FASE 2 — FUNDAMENTOS (3-5 min):
+    Explicación del concepto con analogías del mundo real
+    Por qué es importante y cómo se aplica en el mundo real
+    
+  FASE 3 — DEMOSTRACIÓN PRÁCTICA (5-10 min):
+    Cada comando: ANTES → DURANTE → DESPUÉS
+    Mostrar comando ejecutándose en laboratorio real
+    Explicar resultado línea por línea
+    
+  FASE 4 — EJERCICIO (2-3 min):
+    Ejercicio para practicar en tu PC
+    Comandos que el estudiante debe ejecutar por su cuenta
+    
+  FASE 5 — CIERRE + CTA (1-2 min):
+    Resumen de lo aprendido (3 puntos clave)
+    Prerrequisito del siguiente módulo
+    CTA: "Guarda esto", "Continúa en el siguiente módulo"
+    Mención del certificado kr-clidn
+
+REGLAS DE RETENCIÓN EDUCATIVA:
+- Hook en los primeros 3 segundos
+- Pattern interrupt cada 60-90 segundos
+- Preguntas directas al estudiante min 3 veces
+- CTAs naturales: "Guarda esto para después", "Like si aprendiste"
+
+REGLAS DE CERTIFICADO:
+- Al completar todos los módulos: "Tu certificado kr-clidn está disponible"
+- Motivar a compartir el logro
+
+PRÁCTICA EN TU PC:
+- Todos los ejercicios son para ejecutar en tu propia máquina
+- Usar herramientas gratuitas y installables
+- Incluir comandos de instalación cuando sea necesario
 """,
     },
 }
@@ -434,17 +491,20 @@ AUDIENCE_CONFIGS = {
 #  FUNCIÓN: Construir el bloque de instrucciones para el prompt
 # ═══════════════════════════════════════════════════════════════════
 
+
 def build_video_config_block(
-    video_type:     str = "tutorial_profundo",
+    video_type: str = "tutorial_profundo",
     presenter_style: str = "experto_tecnico",
-    audience:       str = "intermedio",
-    extra_notes:    str = "",
+    audience: str = "intermedio",
+    extra_notes: str = "",
 ) -> str:
     """
     Construye el bloque completo de configuración de video para inyectar al prompt.
     """
-    template   = VIDEO_TEMPLATES.get(video_type, VIDEO_TEMPLATES["tutorial_profundo"])
-    presenter  = PRESENTER_STYLES.get(presenter_style, PRESENTER_STYLES["experto_tecnico"])
+    template = VIDEO_TEMPLATES.get(video_type, VIDEO_TEMPLATES["tutorial_profundo"])
+    presenter = PRESENTER_STYLES.get(
+        presenter_style, PRESENTER_STYLES["experto_tecnico"]
+    )
     aud_config = AUDIENCE_CONFIGS.get(audience, AUDIENCE_CONFIGS["intermedio"])
 
     block = f"""
@@ -454,17 +514,17 @@ def build_video_config_block(
 CONFIGURACIÓN ACTIVA DE ESTE VIDEO
 ═══════════════════════════════════════════════
 
-TIPO DE VIDEO: {template['icono']} {template['nombre']}
-DURACIÓN RECOMENDADA: {template['duracion_recomendada']}
-ESCENAS RECOMENDADAS: {template['escenas_recomendadas']}
+TIPO DE VIDEO: {template["icono"]} {template["nombre"]}
+DURACIÓN RECOMENDADA: {template["duracion_recomendada"]}
+ESCENAS RECOMENDADAS: {template["escenas_recomendadas"]}
 
-ESTILO DEL PRESENTADOR: {presenter['nombre']}
-{presenter['instruccion']}
+ESTILO DEL PRESENTADOR: {presenter["nombre"]}
+{presenter["instruccion"]}
 
-NIVEL DE AUDIENCIA: {aud_config['nombre']}
-{aud_config['instruccion']}
+NIVEL DE AUDIENCIA: {aud_config["nombre"]}
+{aud_config["instruccion"]}
 
-{template['estructura']}
+{template["estructura"]}
 """
 
     if extra_notes.strip():
@@ -488,40 +548,43 @@ def get_template_list() -> list:
     """Retorna lista de plantillas para mostrar en la UI."""
     return [
         {
-            "key":         k,
-            "nombre":      v["nombre"],
-            "icono":       v["icono"],
+            "key": k,
+            "nombre": v["nombre"],
+            "icono": v["icono"],
             "descripcion": v["descripcion"],
-            "duracion":    v["duracion_recomendada"],
+            "duracion": v["duracion_recomendada"],
         }
         for k, v in VIDEO_TEMPLATES.items()
     ]
 
 
 def get_presenter_list() -> list:
-    return [{"key": k, "nombre": v["nombre"], "descripcion": v["descripcion"]}
-            for k, v in PRESENTER_STYLES.items()]
+    return [
+        {"key": k, "nombre": v["nombre"], "descripcion": v["descripcion"]}
+        for k, v in PRESENTER_STYLES.items()
+    ]
 
 
 def get_audience_list() -> list:
-    return [{"key": k, "nombre": v["nombre"]}
-            for k, v in AUDIENCE_CONFIGS.items()]
+    return [{"key": k, "nombre": v["nombre"]} for k, v in AUDIENCE_CONFIGS.items()]
 
 
 def get_content_types():
     return list(VIDEO_TEMPLATES.keys())
 
 
-def get_content_prompt(content_type: str, tema: str, labs_context: str = "", memory_context: str = "") -> str:
+def get_content_prompt(
+    content_type: str, tema: str, labs_context: str = "", memory_context: str = ""
+) -> str:
     if content_type not in VIDEO_TEMPLATES:
         raise ValueError(f"Tipo de contenido '{content_type}' no encontrado")
     template = VIDEO_TEMPLATES[content_type]
     return f"""
-TIPO DE VIDEO: {template['icono']} {template['nombre']}
-DESCRIPCIÓN: {template['descripcion']}
-DURACIÓN RECOMENDADA: {template['duracion_recomendada']}
+TIPO DE VIDEO: {template["icono"]} {template["nombre"]}
+DESCRIPCIÓN: {template["descripcion"]}
+DURACIÓN RECOMENDADA: {template["duracion_recomendada"]}
 
-{template['estructura']}
+{template["estructura"]}
 
 LABORATORIOS: {labs_context}
 {memory_context}

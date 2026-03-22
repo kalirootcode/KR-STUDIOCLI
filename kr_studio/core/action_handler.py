@@ -67,10 +67,28 @@ class ActionHandler:
         Lógica de procesamiento del chat que se ejecuta en segundo plano.
         """
         try:
-            content_type = self.ui.content_combo.get()
-            content_type = None if content_type == "Por defecto" else content_type
+            # Obtener el tipo de contenido
+            content_type = None
+            if hasattr(self.ui, "configuration_panel") and hasattr(
+                self.ui.configuration_panel, "content_combo"
+            ):
+                content_type_val = self.ui.configuration_panel.content_combo.get()
+                content_type = (
+                    None if content_type_val == "Por defecto" else content_type_val
+                )
+            else:
+                # Fallback to the old way (if we haven't moved the configuration panel yet)
+                content_type = self.ui.content_combo.get()
+                content_type = None if content_type == "Por defecto" else content_type
 
-            target_ip = self.ui.target_combo.get()
+            # Obtener el objetivo
+            target_ip = ""
+            if hasattr(self.ui, "configuration_panel") and hasattr(
+                self.ui.configuration_panel, "target_combo"
+            ):
+                target_ip = self.ui.configuration_panel.target_combo.get()
+            else:
+                target_ip = self.ui.target_combo.get()
 
             # Obtener el modo seleccionado (DUAL AI o SOLO TERM)
             modo = "DUAL_AI"
@@ -92,10 +110,31 @@ class ActionHandler:
             # Obtener duración y velocidad
             duration_min = 5
             typing_speed = 80
-            if hasattr(self.ui, "video_duration_min"):
-                duration_min = self.ui.video_duration_min
-            if hasattr(self.ui, "typing_speed_pct"):
-                typing_speed = self.ui.typing_speed_pct
+            if hasattr(self.ui, "configuration_panel"):
+                if hasattr(self.ui.configuration_panel, "video_duration_min"):
+                    duration_min = self.ui.configuration_panel.video_duration_min
+                if hasattr(self.ui.configuration_panel, "typing_speed_pct"):
+                    typing_speed = self.ui.configuration_panel.typing_speed_pct
+            else:
+                if hasattr(self.ui, "video_duration_min"):
+                    duration_min = self.ui.video_duration_min
+                if hasattr(self.ui, "typing_speed_pct"):
+                    typing_speed = self.ui.typing_speed_pct
+
+            # Obtener estado de contenido de tercero
+            third_party_content = False
+            if hasattr(self.ui, "configuration_panel") and hasattr(
+                self.ui.configuration_panel, "third_party_content_var"
+            ):
+                third_party_content = (
+                    self.ui.configuration_panel.third_party_content_var.get()
+                )
+            else:
+                if (
+                    hasattr(self.ui, "third_party_content_var")
+                    and self.ui.third_party_content_var
+                ):
+                    third_party_content = self.ui.third_party_content_var.get()
 
             # Generar el proyecto pasando todos los parámetros
             response_text = self.ai.generar_proyecto(
@@ -106,6 +145,7 @@ class ActionHandler:
                 formato=formato,
                 duration_min=duration_min,
                 typing_speed=typing_speed,
+                third_party_content=third_party_content,
             )
 
             json_data = self.ai.extraer_json(response_text)

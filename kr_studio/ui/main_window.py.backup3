@@ -41,96 +41,10 @@ from kr_studio.core.video_templates import (
 
 
 class MainWindow(ctk.CTkFrame):  # type: ignore
-    def _show_configuration_panel(self):
-        """Muestra la ventana emergente de configuración global."""
-        if hasattr(self, "config_window") and self.config_window:
-            self.config_window.deiconify()
-            self.config_window.lift()
-            self.config_window.focus_force()
-
     def _build_configuration_panel(self):
-        """Construye el panel de configuración centralizada en una ventana flotante."""
-        self.config_window = ctk.CTkToplevel(self)
-        self.config_window.title("⚙️ Configuración Global")
-        self.config_window.geometry("500x750")
-        self.config_window.withdraw()  # Ocultar al inicio
-        self.config_window.protocol("WM_DELETE_WINDOW", self.config_window.withdraw)
-
-        self.config_window.grid_rowconfigure(0, weight=1)
-        self.config_window.grid_columnconfigure(0, weight=1)
-
+        """Construye el panel de configuración centralizada."""
         panel = ctk.CTkScrollableFrame(
-            self.config_window,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=12,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-
-        # ── Header ──
-        header = ctk.CTkFrame(
-            panel, fg_color=COLORS["header_bg"], height=42, corner_radius=0
-        )
-        header.pack(fill="x", pady=(0, 6))
-        header.pack_propagate(False)
-
-        ctk.CTkLabel(header, text="⚙️", font=("Arial", 18)).pack(
-            side="left", padx=(12, 4)
-        )
-        ctk.CTkLabel(
-            header,
-            text="CONFIGURACIÓN CENTRALIZADA",
-            font=("JetBrains Mono", 14, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-
-        # Botón de restablecer
-        reset_btn = ctk.CTkButton(
-            header,
-            text="🔄 Restablecer",
-            width=100,
-            height=28,
-            font=("JetBrains Mono", 10),
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            command=self._reset_configuration_to_defaults,
-        )
-        reset_btn.pack(side="right", padx=(12, 4), pady=6)
-
-        # Contenido principal
-        controls = ctk.CTkFrame(panel, fg_color="transparent")
-        controls.pack(fill="both", expand=True, padx=4, pady=4)
-
-        # Configuración de video
-        self._build_video_config_section(controls)
-
-        # Parámetros de ejecución
-        self._build_execution_params_section(controls)
-
-        # Selección de objetivo
-        self._build_target_section(controls)
-
-        # Formato y Opciones
-        self._build_format_options_section(controls)
-
-        # Notas y Contenido
-        self._build_notes_content_section(controls)
-
-        # Botones de acción
-        self._build_configuration_action_buttons(panel)
-        """Construye el panel de configuración centralizada en una ventana flotante."""
-        self.config_window = ctk.CTkToplevel(self)
-        self.config_window.title("⚙️ Configuración Global")
-        self.config_window.geometry("500x750")
-        self.config_window.withdraw()  # Ocultar al inicio
-        self.config_window.protocol("WM_DELETE_WINDOW", self.config_window.withdraw)
-
-        self.config_window.grid_rowconfigure(0, weight=1)
-        self.config_window.grid_columnconfigure(0, weight=1)
-
-        panel = ctk.CTkScrollableFrame(
-            self.config_window,
+            self.tab5,
             fg_color=COLORS["bg_panel"],
             corner_radius=12,
             border_width=1,
@@ -331,7 +245,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
         # Velocidad de tipeo
         speed_row = ctk.CTkFrame(parent, fg_color="transparent")
-        speed_row.pack(fill="x", padx=10, pady=5)
+        speed_row.pack(fill="x", padx=10, pyd=5)
 
         ctk.CTkLabel(
             speed_row,
@@ -496,7 +410,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             text_color=COLORS["text_dim"],
         ).pack(side="left")
 
-        self.format_combo_var = ctk.StringVar(value="9:16 (Vertical)")
+        self.format_combo_var = ctk.CTkStringVar(value="9:16 (Vertical)")
         self.format_combo = ctk.CTkOptionMenu(
             format_row,
             variable=self.format_combo_var,
@@ -779,54 +693,37 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         }
 
     def __init__(self, master_app):
-        print("DEBUG: MainWindow.__init__ start", flush=True)
         super().__init__(master_app, fg_color=COLORS["bg_dark"])  # type: ignore
-        print("DEBUG: After super().__init__", flush=True)
         self.master_app = master_app
-        print("DEBUG: After setting master_app", flush=True)
         self.pack(fill="both", expand=True)
-        print("DEBUG: After pack", flush=True)
 
         self._base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self._env_path = os.path.join(os.path.dirname(self._base_dir), ".env")
-        print("DEBUG: _base_dir and _env_path set", flush=True)
 
         # Inicializar los motores y gestores principales
         self.task_manager = TaskManager()
-        print("DEBUG: TaskManager created", flush=True)
         self.ai = AIEngine("")
-        print("DEBUG: AIEngine created", flush=True)
         self.action_handler = ActionHandler(self)
-        print("DEBUG: ActionHandler created", flush=True)
         self.workspace_dir = os.path.join(self._base_dir, "workspace")
         self.projects_dir = os.path.join(self._base_dir, "projects")
-        print("DEBUG: workspace and projects dirs set", flush=True)
         os.makedirs(self.workspace_dir, exist_ok=True)
         os.makedirs(self.projects_dir, exist_ok=True)
-        print("DEBUG: dirs created", flush=True)
 
         # Cargar preferencias guardadas
         self.typing_speed_pct = 70
         self.video_duration_min = 5
-        print("DEBUG: About to load UI preferences", flush=True)
         self._load_ui_preferences()
-        print("DEBUG: UI preferences loaded", flush=True)
-
-        # Variables de estado
         self.wid_a: typing.Optional[int] = None
         self.wid_b: typing.Optional[int] = None
         self._anim_id = None
         self._floating_ctrl: typing.Optional[FloatingControl] = None
-        self._create_floating_control()
         self._active_director: typing.Optional[MasterDirector] = None
-        print("DEBUG: Misc variables initialized", flush=True)
-
         # Configuración variables (will be initialized in _build_configuration_panel)
         self._video_type_var: typing.Any = None
         self._presenter_style_var: typing.Any = None
         self._audience_var: typing.Any = None
-        self.typing_speed_pct: int = 80  # default, will be overridden by UI
-        self.video_duration_min: int = 5  # default, will be overridden by UI
+        self.typing_speed_pct: int = 80
+        self.video_duration_min: int = 5
         self.use_wrapper_var: typing.Any = None
         self.third_party_content_var: typing.Any = None
         self.target_combo_var: typing.Any = None
@@ -839,74 +736,55 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         # Auto-save related
         self._auto_save_after_id: typing.Optional[str] = None
         self._auto_save_delay_ms = 2000  # 2 seconds
+        self._active_director = None
 
-        # Orquestadores
         from kr_studio.core.series_orchestrator import SeriesOrchestrator  # type: ignore
         from kr_studio.core.course_engine import CourseOrchestrator  # type: ignore
 
         self.series_orchestrator = SeriesOrchestrator(self.ai, self.workspace_dir)  # type: ignore
         self.course_orchestrator = CourseOrchestrator(self.ai, self.workspace_dir)  # type: ignore
 
-        # Estado adicional
+        self.video_duration_min = 5
+        self.use_wrapper_var: typing.Optional[ctk.BooleanVar] = (
+            None  # Se crea en _build_editor_panel
+        )
         self.timestamps: typing.Dict[str, typing.Any] = {}
-        self._raw_video_path: typing.Optional[str] = None
         self.pre_mode_var: typing.Optional[ctk.StringVar] = (
             None  # Se crea en _build_chat_panel
         )
-        # use_wrapper_var se crea en _build_editor_panel, pero ya tenemos una variable arriba (se sobrescribirá)
+        self._raw_video_path: typing.Optional[str] = None
 
         # ─── LAYOUT: API Bar + Tabview ───
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        # Cargar API Key anticipadamente para evitar "flashing"
-        saved_key = self._load_env_key()
-        is_api_valid = False
-
         self._build_api_bar()
-
-        if saved_key:
-            try:
-                self.ai = AIEngine(saved_key)
-                self.api_entry.insert(0, saved_key)
-                is_api_valid = True
-                # Si es válida, la ocultamos de inmediato
-                self._api_bar.grid_forget()
-            except Exception:
-                is_api_valid = False
-
-        print("DEBUG: API bar built", flush=True)
 
         # ── CTkTabview ──
         self.tabview = ctk.CTkTabview(
             self,
             fg_color=COLORS["bg_dark"],
             segmented_button_fg_color=COLORS["bg_panel"],
-            segmented_button_selected_color="#0D47A1",  # Azul oscuro elegante
-            segmented_button_selected_hover_color="#1565C0",
-            segmented_button_unselected_color="#1a1b2e",  # Fondo panel oscuro
-            segmented_button_unselected_hover_color="#252640",
-            text_color="#ffffff",  # Blanco para que siempre se vea bien
+            segmented_button_selected_color=COLORS["accent_cyan"],
+            segmented_button_selected_hover_color="#00b8d4",
+            segmented_button_unselected_color=COLORS["bg_dark"],
+            segmented_button_unselected_hover_color="#2a2b3e",
+            text_color="#000000",
             corner_radius=8,
         )
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
-        print("DEBUG: Tabview created", flush=True)
 
         self.tab1 = self.tabview.add("🎬 Guion y Director")
         self.tab2 = self.tabview.add("🎬 Orquestador de Series")
         self.tab3 = self.tabview.add("🎙 Estudio TTS")
         self.tab4 = self.tabview.add("🚀 Marketing Studio")
+        self.tab5 = self.tabview.add("⚙️ Configuración")
         self.tab6 = self.tabview.add("🧠 Opencode")
-        print("DEBUG: Tabs added", flush=True)
 
         # Tab 1 layout
-        self.tab1.grid_columnconfigure(0, weight=3)  # Panel izquierdo (Chat)
-        self.tab1.grid_columnconfigure(
-            1, weight=5
-        )  # Panel central (Editor) = mucho más ancho
-        self.tab1.grid_columnconfigure(
-            2, weight=2
-        )  # Panel derecho (Config) = más angosto
+        self.tab1.grid_columnconfigure(0, weight=1)
+        self.tab1.grid_columnconfigure(1, weight=1)
+        self.tab1.grid_columnconfigure(2, weight=1)
         self.tab1.grid_rowconfigure(0, weight=1)
 
         self._build_chat_panel()
@@ -927,55 +805,43 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         self.tab4.grid_columnconfigure(1, weight=3)
         self._build_marketing_studio()
 
-        # Opencode tab layout
+        # Tab 5 layout
+        self.tab5.grid_rowconfigure(0, weight=1)
+        self.tab5.grid_columnconfigure(0, weight=1)
+        self._build_configuration_panel()
+
+        # Tab 6 layout
         self.tab6.grid_rowconfigure(0, weight=1)
         self.tab6.grid_columnconfigure(0, weight=1)
         self._build_opencode_tab()
 
-        # Configuración Global (Ventana emergente)
-        self._build_configuration_panel()
-
-        # Botón de engranaje global en la esquina superior derecha
-        self.btn_open_config = ctk.CTkButton(
-            self,
-            text="⚙️",
-            width=36,
-            height=36,
-            corner_radius=8,
-            fg_color=COLORS["bg_panel"],
-            hover_color=COLORS["gray_medium"],
-            text_color="#ffffff",
-            font=("Arial", 18),
-            command=self._show_configuration_panel,
-        )
-        self.btn_open_config.place(relx=1.0, rely=0.0, x=-20, y=10, anchor="ne")
-
         # ─── POSICIONAR VENTANA ───
 
         # ─── POSICIONAR VENTANA ───
-
-        # Maximizar ventana según OS sin forzar geometrías contradictorias
-        try:
-            self.master_app.state("zoomed")  # Windows / algunos Linux
-        except Exception:
-            try:
-                self.master_app.attributes("-zoomed", True)  # Alternativa Linux X11
-            except Exception:
-                # Fallback solo si los métodos nativos fallan
-                sw = self.master_app.winfo_screenwidth()
-                sh = self.master_app.winfo_screenheight()
-                self.master_app.geometry(f"{sw}x{sh}+0+0")
-
-        # Forzamos actualización visual una sola vez al final del layout
         self.master_app.update_idletasks()
+        sw = self.master_app.winfo_screenwidth()
+        sh = self.master_app.winfo_screenheight()
+        x = int((sw - 1300) / 2)
+        y = int((sh - 800) / 2)
+        self.master_app.geometry(f"1300x800+{x}+{y}")
 
         # Auto-cargar API Key desde .env
-        if hasattr(self, "api_entry") and getattr(self, "api_entry").get():
-            # La API key ya se cargó y configuró al principio de __init__
-            self.append_chat(
-                "Sistema",
-                "Bienvenido a KR-STUDIO 🎬\nAPI Key cargada desde .env — DOMINION listo.",
-            )
+        saved_key = self._load_env_key()
+        if saved_key:
+            try:
+                self.ai = AIEngine(saved_key)
+                self.api_entry.insert(0, saved_key)
+                self.append_chat(
+                    "Sistema",
+                    "Bienvenido a KR-STUDIO 🎬\nAPI Key cargada desde .env — DOMINION listo.",
+                )
+                # Ocultar barra de API al cargar después de un pequeño delay visual
+                self.after(800, lambda: self._api_bar.grid_forget())
+            except Exception:
+                self.append_chat(
+                    "Sistema",
+                    "Bienvenido a KR-STUDIO 🎬\n⚠ API Key en .env inválida. Ingresa una nueva.",
+                )
         else:
             self.append_chat(
                 "Sistema",
@@ -1226,44 +1092,32 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
         # ── Header (row 0) ──
         header = ctk.CTkFrame(
-            panel, fg_color=COLORS["header_bg"], height=48, corner_radius=0
+            panel, fg_color=COLORS["header_bg"], height=42, corner_radius=0
         )
         header.grid(row=0, column=0, sticky="ew")
         header.grid_propagate(False)
 
-        ctk.CTkLabel(header, text="📝", font=("Arial", 20)).pack(
+        ctk.CTkLabel(header, text="📝", font=("Arial", 18)).pack(
             side="left", padx=(12, 4)
         )
         ctk.CTkLabel(
             header,
             text="EDITOR DE GUION",
-            font=("JetBrains Mono", 14, "bold"),
+            font=("JetBrains Mono", 13, "bold"),
             text_color=COLORS["accent_cyan"],
         ).pack(side="left")
 
-        # Botón Guardar (solo icono) en el header
-        self.save_project_btn = ctk.CTkButton(
-            header,
-            text="💾",
-            command=self._manual_save_project,
-            font=("Arial", 18),
-            width=36,
-            height=36,
-            fg_color="transparent",
-            hover_color="#252640",
-            text_color=COLORS["accent_cyan"],
-        )
-        self.save_project_btn.pack(side="right", padx=(0, 12))
-
         # ── Editor DUAL con pestañas (row 1 — SE EXPANDE) ──
         editor_tabs_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        editor_tabs_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 8))
+        editor_tabs_frame.grid(row=1, column=0, sticky="nsew", padx=6, pady=(2, 6))
         editor_tabs_frame.grid_rowconfigure(1, weight=1)
         editor_tabs_frame.grid_columnconfigure(0, weight=1)
 
-        # Tab buttons (estilizados)
-        tab_bar = ctk.CTkFrame(editor_tabs_frame, fg_color="transparent", height=32)
-        tab_bar.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        # Tab buttons
+        tab_bar = ctk.CTkFrame(
+            editor_tabs_frame, fg_color=COLORS["header_bg"], height=30
+        )
+        tab_bar.grid(row=0, column=0, sticky="ew")
         tab_bar.grid_propagate(False)
 
         self._active_tab = "a"
@@ -1271,43 +1125,50 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             tab_bar,
             text="📝 Terminal A (Chat)",
             command=lambda: self._switch_editor_tab("a"),
-            font=("JetBrains Mono", 11, "bold"),
-            fg_color=COLORS["accent_cyan"],
-            text_color="#000000",
-            hover_color="#00b8d4",
-            corner_radius=6,
-            width=140,
-            height=28,
+            font=("JetBrains Mono", 10, "bold"),
+            fg_color="#1a1b2e",
+            text_color=COLORS["text_dim"],
+            hover_color="#252640",
+            width=120,
+            height=24,
         )
-        self.tab_btn_a.pack(side="left", padx=(0, 4))
+        self.tab_btn_a.pack(side="left", padx=(4, 2), pady=3)
+
+        # Guardar proyecto button
+        self.save_project_btn = ctk.CTkButton(
+            tab_bar,
+            text="💾 Guardar Proyecto",
+            command=self._manual_save_project,
+            font=("JetBrains Mono", 10, "bold"),
+            fg_color="#1a1b2e",
+            hover_color="#252640",
+            width=120,
+            height=24,
+            border_width=1,
+            border_color=COLORS["accent_cyan"],
+        )
+        self.save_project_btn.pack(side="left", padx=2, pady=3)
 
         self.tab_btn_b = ctk.CTkButton(
             tab_bar,
             text="⚡ Terminal B (Cmds)",
             command=lambda: self._switch_editor_tab("b"),
-            font=("JetBrains Mono", 11, "bold"),
+            font=("JetBrains Mono", 10, "bold"),
             fg_color="#1a1b2e",
             text_color=COLORS["text_dim"],
             hover_color="#252640",
-            corner_radius=6,
             width=140,
-            height=28,
+            height=24,
         )
-        self.tab_btn_b.pack(side="left", padx=4)
+        self.tab_btn_b.pack(side="left", padx=2, pady=3)
 
         # Editor container (switchable)
-        editor_stack = ctk.CTkFrame(
-            editor_tabs_frame,
-            fg_color=COLORS["bg_editor"],
-            corner_radius=8,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
+        editor_stack = ctk.CTkFrame(editor_tabs_frame, fg_color="transparent")
         editor_stack.grid(row=1, column=0, sticky="nsew")
 
         # ── Editor A (Terminal A / Chat) ──
         self.editor_container_a = ctk.CTkFrame(editor_stack, fg_color="transparent")
-        self.editor_container_a.pack(fill="both", expand=True, padx=4, pady=4)
+        self.editor_container_a.pack(fill="both", expand=True)
 
         self.line_numbers = tk.Text(
             self.editor_container_a,
@@ -1761,14 +1622,14 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         self._active_tab = tab
         if tab == "a":
             self.editor_container_b.pack_forget()
-            self.editor_container_a.pack(fill="both", expand=True, padx=4, pady=4)
+            self.editor_container_a.pack(fill="both", expand=True)
             self.tab_btn_a.configure(
                 fg_color=COLORS["accent_cyan"], text_color="#000000"
             )
             self.tab_btn_b.configure(fg_color="#1a1b2e", text_color=COLORS["text_dim"])
         else:
             self.editor_container_a.pack_forget()
-            self.editor_container_b.pack(fill="both", expand=True, padx=4, pady=4)
+            self.editor_container_b.pack(fill="both", expand=True)
             self.tab_btn_b.configure(
                 fg_color=COLORS["accent_green"], text_color="#000000"
             )
@@ -2526,316 +2387,527 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
     def _build_marketing_studio(self):
         """
-        Marketing Studio - Rediseñado para Planificación y Promoción de Cursos.
-        - Panel Izquierdo: Plan de Estudios (Syllabus).
-        - Panel Central: Generación de Contenido Promocional (Tráiler, Posts, Blog).
-        - Panel Derecho: Títulos Atractivos y Recursos del Curso.
+        Marketing Studio - Sistema completo de Marketing Launch Kit
+        - Panel izquierdo: Info del curso, secciones del marketing
+        - Panel derecho: Visualizador de contenido con tabs
         """
-        # Configurar el grid principal de la pestaña de Marketing con 3 columnas
-        self.tab4.grid_columnconfigure(0, weight=2)  # Plan de Estudios
-        self.tab4.grid_columnconfigure(1, weight=3)  # Contenido Promocional
-        self.tab4.grid_columnconfigure(2, weight=2)  # Títulos y Recursos
-        self.tab4.grid_rowconfigure(0, weight=1)
+        # ── Header ──
+        header = ctk.CTkFrame(
+            self.tab4, fg_color=COLORS["header_bg"], height=48, corner_radius=0
+        )
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
+        ctk.CTkLabel(
+            header,
+            text="🚀  MARKETING LAUNCH STUDIO",
+            font=("JetBrains Mono", 14, "bold"),
+            text_color="#FF6B35",
+        ).pack(side="left", padx=14, pady=10)
+        ctk.CTkLabel(
+            header,
+            text="Hotmart • Viral Scripts • Pricing Strategy",
+            font=("JetBrains Mono", 10),
+            text_color="#555577",
+        ).pack(side="right", padx=14)
 
         # ════════════════════════════════════════
-        # PANEL IZQUIERDO — Plan de Estudios (Syllabus)
+        # PANEL IZQUIERDO — Control y Secciones
         # ════════════════════════════════════════
-        syllabus_panel = ctk.CTkFrame(
+        left_panel = ctk.CTkFrame(
             self.tab4,
             fg_color=COLORS["bg_panel"],
             corner_radius=10,
             border_width=1,
             border_color=COLORS["border"],
         )
-        syllabus_panel.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
-        syllabus_panel.grid_rowconfigure(2, weight=1)
-        syllabus_panel.grid_columnconfigure(0, weight=1)
+        left_panel.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(8, 8))
+        left_panel.grid_rowconfigure(7, weight=1)
+        left_panel.grid_columnconfigure(0, weight=1)
 
-        # Header
-        syllabus_header = ctk.CTkFrame(
-            syllabus_panel, fg_color=COLORS["header_bg"], height=40
+        # Header del panel izquierdo
+        lh = ctk.CTkFrame(
+            left_panel, fg_color=COLORS["header_bg"], height=36, corner_radius=0
         )
-        syllabus_header.grid(row=0, column=0, sticky="ew")
+        lh.grid(row=0, column=0, sticky="ew")
         ctk.CTkLabel(
-            syllabus_header,
-            text="📚 PLAN DE ESTUDIOS",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color="#1E88E5",
-        ).pack(side="left", padx=12)
+            lh,
+            text="📊 CONTROL DE MARKETING",
+            font=("JetBrains Mono", 11, "bold"),
+            text_color="#FF6B35",
+        ).pack(side="left", padx=10, pady=6)
 
-        # Campo para el tema del curso
-        syllabus_topic_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=8)
-        self.mkt_course_topic_entry = ctk.CTkEntry(
-            syllabus_topic_frame,
-            placeholder_text="Ej: Hacking Ético con Python",
-            font=("JetBrains Mono", 11),
+        # Selección de Proyecto
+        self._mkt_project_selector_frame = ctk.CTkFrame(
+            left_panel, fg_color="transparent"
         )
-        self.mkt_course_topic_entry.pack(
-            side="left", fill="x", expand=True, padx=(0, 4)
+        self._mkt_project_selector_frame.grid(
+            row=0, column=0, sticky="ew", padx=8, pady=(8, 4)
         )
+        self._mkt_project_selector_frame.grid_columnconfigure(0, weight=1)
 
-        # Botones de acción del panel de syllabus
-        self.mkt_generate_syllabus_btn = ctk.CTkButton(
-            syllabus_topic_frame,
-            text="Generar",
-            width=80,
-            command=lambda: self._mkt_generate_content("syllabus"),
+        ctk.CTkLabel(
+            self._mkt_project_selector_frame,
+            text="📁 Seleccionar Proyecto:",
+            font=("JetBrains Mono", 10, "bold"),
+            text_color=COLORS["text_dim"],
+        ).grid(row=0, column=0, sticky="w", padx=(0, 5), pady=(0, 2))
+
+        self._mkt_project_combo = ctk.CTkComboBox(
+            self._mkt_project_selector_frame,
+            values=["No hay proyectos"],
+            state="readonly",
+            width=200,
+            font=("JetBrains Mono", 10),
+            fg_color=COLORS["bg_dark"],
+            border_color=COLORS["border"],
+            button_color=COLORS["accent_cyan"],
+            button_hover_color="#00ACC1",
         )
-        self.mkt_generate_syllabus_btn.pack(side="left", padx=4)
-        self.mkt_load_course_btn = ctk.CTkButton(
-            syllabus_topic_frame,
+        self._mkt_project_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=(0, 2))
+        self._mkt_project_combo.set("No hay proyectos")
+
+        self._mkt_load_project_btn = ctk.CTkButton(
+            self._mkt_project_selector_frame,
             text="Cargar",
-            width=70,
-            command=self._mkt_load_course_from_folder,
+            command=self._mkt_load_selected_project,
+            font=("JetBrains Mono", 10, "bold"),
+            width=80,
+            height=24,
+            fg_color="#1a1b2e",
+            hover_color="#252640",
         )
-        self.mkt_load_course_btn.pack(side="left")
+        self._mkt_load_project_btn.grid(
+            row=0, column=2, sticky="e", padx=(5, 0), pady=(0, 2)
+        )
 
-        # Área de texto para el plan de estudios
-        self.mkt_syllabus_text = ctk.CTkTextbox(
-            syllabus_panel,
-            font=("JetBrains Mono", 10),
-            wrap="word",
-            fg_color=COLORS["bg_editor"],
-            border_width=0,
+        # Info del curso (ahora será info del proyecto)
+        self._mkt_course_info = ctk.CTkFrame(
+            left_panel, fg_color="#0d0e1a", corner_radius=6
         )
-        self.mkt_syllabus_text.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
-
-        # ════════════════════════════════════════
-        # PANEL CENTRAL — Contenido Promocional
-        # ════════════════════════════════════════
-        promo_panel = ctk.CTkFrame(
-            self.tab4,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=10,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        promo_panel.grid(row=0, column=1, sticky="nsew", padx=4, pady=8)
-        promo_panel.grid_rowconfigure(1, weight=1)
-        promo_panel.grid_columnconfigure(0, weight=1)
-
-        # Header y botones de generación
-        promo_header = ctk.CTkFrame(
-            promo_panel, fg_color=COLORS["header_bg"], height=40
-        )
-        promo_header.grid(row=0, column=0, sticky="ew")
+        self._mkt_course_info.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 4))
         ctk.CTkLabel(
-            promo_header,
-            text="📝 CONTENIDO PROMOCIONAL",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color="#D81B60",
-        ).pack(side="left", padx=12)
-
-        promo_buttons_frame = ctk.CTkFrame(promo_header, fg_color="transparent")
-        promo_buttons_frame.pack(side="right", padx=8)
-        ctk.CTkButton(
-            promo_buttons_frame,
-            text="Tráiler",
-            command=lambda: self._mkt_generate_content("trailer"),
-            width=70,
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            promo_buttons_frame,
-            text="Posts",
-            command=lambda: self._mkt_generate_content("posts"),
-            width=70,
-        ).pack(side="left", padx=2)
-        ctk.CTkButton(
-            promo_buttons_frame,
-            text="Blog",
-            command=lambda: self._mkt_generate_content("blog"),
-            width=70,
-        ).pack(side="left", padx=2)
-
-        # Área de texto para el contenido promocional
-        self.mkt_promo_content_text = ctk.CTkTextbox(
-            promo_panel,
+            self._mkt_course_info,
+            text="📚 Proyecto: No seleccionado",
             font=("JetBrains Mono", 10),
-            wrap="word",
-            fg_color=COLORS["bg_editor"],
-            border_width=0,
+            text_color=COLORS["text_dim"],
+            anchor="w",
+        ).pack(anchor="w", padx=8, pady=(6, 2))
+        self._mkt_nivel_label = ctk.CTkLabel(
+            self._mkt_course_info,
+            text="🎯 Nivel: -",
+            font=("JetBrains Mono", 9),
+            text_color=COLORS["text_dim"],
+            anchor="w",
         )
-        self.mkt_promo_content_text.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        self._mkt_nivel_label.pack(anchor="w", padx=8, pady=(0, 6))
 
-        # ════════════════════════════════════════
-        # PANEL DERECHO — Títulos y Recursos
-        # ════════════════════════════════════════
-        extra_panel = ctk.CTkFrame(
-            self.tab4,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=10,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        extra_panel.grid(row=0, column=2, sticky="nsew", padx=(4, 8), pady=8)
-        extra_panel.grid_rowconfigure(1, weight=1)
-        extra_panel.grid_rowconfigure(3, weight=1)
-        extra_panel.grid_columnconfigure(0, weight=1)
+        # Almacenar los datos del proyecto cargado
+        self._mkt_loaded_project_data = None
+        self._mkt_loaded_project_name = None
 
-        # Header Títulos
-        titles_header = ctk.CTkFrame(
-            extra_panel, fg_color=COLORS["header_bg"], height=40
-        )
-        titles_header.grid(row=0, column=0, sticky="ew")
-        ctk.CTkLabel(
-            titles_header,
-            text="💡 TÍTULOS ATRACTIVOS",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color="#FFB300",
-        ).pack(side="left", padx=12)
-        ctk.CTkButton(
-            titles_header,
-            text="Generar",
-            width=70,
-            command=lambda: self._mkt_generate_content("titles"),
-        ).pack(side="right", padx=8)
-
-        # Área de texto para títulos
-        self.mkt_titles_text = ctk.CTkTextbox(
-            extra_panel,
-            font=("JetBrains Mono", 10),
-            wrap="word",
-            fg_color=COLORS["bg_editor"],
-            border_width=0,
-            height=150,
-        )
-        self.mkt_titles_text.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
-
-        # Header Recursos
-        resources_header = ctk.CTkFrame(
-            extra_panel, fg_color=COLORS["header_bg"], height=40
-        )
-        resources_header.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        ctk.CTkLabel(
-            resources_header,
-            text="🔗 RECURSOS DEL CURSO",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color="#43A047",
-        ).pack(side="left", padx=12)
-
-        # Área de texto para recursos
-        self.mkt_resources_text = ctk.CTkTextbox(
-            extra_panel,
-            font=("JetBrains Mono", 10),
-            wrap="word",
-            fg_color=COLORS["bg_editor"],
-            border_width=0,
-        )
-        self.mkt_resources_text.grid(
-            row=3, column=0, sticky="nsew", padx=8, pady=(8, 8)
-        )
-
-    def _mkt_generate_content(self, content_type: str):
-        topic = self.mkt_course_topic_entry.get()
-        if not topic:
-            # Reutilizo la función de toast que creamos para Opencode, si no existe la creo.
-            if not hasattr(self, "_show_toast"):
-                # Simple fallback
-                print("ERROR: Por favor, define primero el tema del curso.")
-                return
-            self._show_toast("ERROR", "Por favor, define primero el tema del curso.")
-            return
-
-        target_widget = None
-        prompt = ""
-        syllabus_content = self.mkt_syllabus_text.get("1.0", "end")
-
-        if content_type == "syllabus":
-            target_widget = self.mkt_syllabus_text
-            prompt = f"Actúa como un diseñador instruccional experto en ciberseguridad y tecnología. Crea un plan de estudios detallado y completo para un curso online sobre '{topic}'. El resultado debe estar en formato Markdown, estructurado en módulos y lecciones (ej. 1.1, 1.2). Sé exhaustivo, práctico y cubre desde los fundamentos hasta temas avanzados y casos de uso reales."
-
-        elif content_type in ["trailer", "posts", "blog", "titles"]:
-            if not syllabus_content.strip() or "Generando" in syllabus_content:
-                if not hasattr(self, "_show_toast"):
-                    print("ERROR: Primero debes generar el Plan de Estudios.")
-                    return
-                self._show_toast("ERROR", "Primero debes generar el Plan de Estudios.")
-                return
-
-            if content_type == "trailer":
-                target_widget = self.mkt_promo_content_text
-                prompt = f"Actúa como un guionista de marketing viral para el sector tecnológico. Basado en el siguiente plan de estudios para un curso de '{topic}', escribe un guion de 60 segundos para un tráiler promocional. Formato: Markdown. Debe ser enérgico, atractivo, y enfocado en la transformación y las habilidades que obtendrá el estudiante.\n\nPlan de Estudios:\n{syllabus_content}"
-            elif content_type == "posts":
-                target_widget = self.mkt_promo_content_text
-                prompt = f"Actúa como un Community Manager experto en tech. Basado en el plan de estudios para '{topic}', crea 5 publicaciones para redes sociales (3 para Twitter/X, 2 para LinkedIn) anunciando el nuevo curso. Usa un tono profesional pero entusiasta, y añade hashtags relevantes y llamados a la acción. Formato: Markdown.\n\nPlan de Estudios:\n{syllabus_content}"
-            elif content_type == "blog":
-                target_widget = self.mkt_promo_content_text
-                prompt = f"Actúa como un redactor de contenido SEO especializado en tecnología. Escribe un artículo de blog de ~500 palabras titulado 'Domina {topic}: Anunciamos Nuestro Nuevo Curso Práctico'. El post debe explicar el valor del curso, para quién es, y qué aprenderán, basándose en el siguiente plan de estudios. Formato: Markdown.\n\nPlan de Estudios:\n{syllabus_content}"
-            elif content_type == "titles":
-                target_widget = self.mkt_titles_text
-                prompt = f"Actúa como un experto en copywriting para YouTube. Genera 10 títulos 'clickbait' pero profesionales para videos promocionales de un curso de '{topic}'. Deben crear curiosidad y urgencia. Ejemplo: 'Los 5 secretos de {topic} que las empresas no quieren que sepas'. Formato: lista Markdown.\n\nPlan de Estudios:\n{syllabus_content}"
-
-        if not prompt or not target_widget:
-            return
-
-        target_widget.delete("1.0", "end")
-        target_widget.insert("1.0", "🧠 Generando con IA...")
-
-        def generation_thread():
-            try:
-                response = self.ai.chat(prompt)
-
-                def update_ui():
-                    target_widget.delete("1.0", "end")
-                    target_widget.insert("1.0", response)
-
-                self.after(0, update_ui)
-            except Exception as e:
-                self.after(0, lambda: target_widget.delete("1.0", "end"))
-                self.after(0, lambda: target_widget.insert("1.0", f"Error de IA: {e}"))
-
-        threading.Thread(target=generation_thread, daemon=True).start()
-
-    def _mkt_load_course_from_folder(self):
-        """Abre un diálogo para seleccionar una carpeta de curso y carga su estructura."""
-        course_path = filedialog.askdirectory(
-            title="Selecciona la carpeta principal del curso"
-        )
-        if not course_path:
-            return
-
-        course_name = os.path.basename(course_path)
-        self.mkt_course_topic_entry.delete(0, "end")
-        self.mkt_course_topic_entry.insert(0, course_name)
-
-        syllabus_md = f"# Plan de Estudios: {course_name}\n\n"
-
+    def _refresh_marketing_project_list(self):
+        """Actualiza la lista desplegable de proyectos disponibles para marketing."""
         try:
-            # Asumimos que los subdirectorios son los módulos
-            modules = sorted(
-                [
-                    d
-                    for d in os.listdir(course_path)
-                    if os.path.isdir(os.path.join(course_path, d))
-                ]
-            )
+            projects_dir = self.projects_dir
+            if not os.path.exists(projects_dir):
+                self._mkt_project_combo.configure(values=["No hay proyectos"])
+                self._mkt_project_combo.set("No hay proyectos")
+                return
 
-            for module_name in modules:
-                syllabus_md += f"## Módulo: {module_name}\n"
-                module_path = os.path.join(course_path, module_name)
+            # Get all subdirectories in projects_dir (each represents a project)
+            project_dirs = [
+                d
+                for d in os.listdir(projects_dir)
+                if os.path.isdir(os.path.join(projects_dir, d))
+            ]
 
-                # Asumimos que los archivos .json son los capítulos
-                chapters = sorted(
-                    [f for f in os.listdir(module_path) if f.endswith(".json")]
-                )
+            if not project_dirs:
+                self._mkt_project_combo.configure(values=["No hay proyectos"])
+                self._mkt_project_combo.set("No hay proyectos")
+                return
 
-                for chapter_file in chapters:
-                    # Extraer un nombre más limpio del archivo
-                    chapter_name = (
-                        os.path.splitext(chapter_file)[0].replace("_", " ").title()
-                    )
-                    syllabus_md += f"- {chapter_name}\n"
+            # Sort projects by modification time (newest first)
+            project_dirs_with_time = []
+            for proj in project_dirs:
+                proj_path = os.path.join(projects_dir, proj)
+                if os.path.exists(proj_path):
+                    mtime = os.path.getmtime(proj_path)
+                    project_dirs_with_time.append((proj, mtime))
 
-                syllabus_md += "\n"
+            project_dirs_with_time.sort(key=lambda x: x[1], reverse=True)
+            sorted_projects = [proj for proj, _ in project_dirs_with_time]
 
-            self.mkt_syllabus_text.delete("1.0", "end")
-            self.mkt_syllabus_text.insert("1.0", syllabus_md)
+            # Update the combobox
+            self._mkt_project_combo.configure(values=sorted_projects)
+            if sorted_projects:
+                self._mkt_project_combo.set(
+                    sorted_projects[0]
+                )  # Select the newest by default
+            else:
+                self._mkt_project_combo.set("No hay proyectos")
 
         except Exception as e:
-            self.mkt_syllabus_text.delete("1.0", "end")
-            self.mkt_syllabus_text.insert(
-                "1.0", f"Error al leer la carpeta del curso:\n\n{e}"
+            print(f"Error refreshing marketing project list: {e}")
+            self._mkt_project_combo.configure(values=["Error al cargar proyectos"])
+            self._mkt_project_combo.set("Error al cargar proyectos")
+
+    def _mkt_load_selected_project(self):
+        """Carga el proyecto seleccionado en el Marketing Studio."""
+        selected_project = self._mkt_project_combo.get()
+        if selected_project in ["No hay proyectos", "Error al cargar proyectos"]:
+            self.append_chat("Sistema", "⚠ Por favor selecciona un proyecto válido.")
+            return
+
+        try:
+            project_path = os.path.join(
+                self.projects_dir, selected_project, "guion.json"
             )
+            if not os.path.exists(project_path):
+                self.append_chat(
+                    "Sistema",
+                    f"⚠ No se encontró el archivo guion.json en el proyecto '{selected_project}'.",
+                )
+                return
+
+            with open(project_path, "r", encoding="utf-8") as f:
+                project_data = json.load(f)
+
+            if not isinstance(project_data, list):
+                self.append_chat(
+                    "Sistema",
+                    f"⚠ El formato del proyecto '{selected_project}' no es válido.",
+                )
+                return
+
+            # Store the loaded project data
+            self._mkt_loaded_project_data = project_data
+            self._mkt_loaded_project_name = selected_project
+
+            # Update UI
+            self._mkt_course_info.configure(
+                fg_color="#1a472a"
+            )  # Dark green for success
+            for widget in self._mkt_course_info.winfo_children():
+                if isinstance(widget, ctk.CTkLabel):
+                    widget.configure(
+                        text=f"📚 Proyecto: {selected_project}",
+                        text_color=COLORS["accent_cyan"],
+                    )
+
+            # Also update the nivel label to show scene count
+            scene_count = len(project_data)
+            self._mkt_nivel_label.configure(
+                text=f"🎯 Escenas: {scene_count}", text_color=COLORS["accent_cyan"]
+            )
+
+            self.append_chat(
+                "Sistema",
+                f"✅ Proyecto '{selected_project}' cargado para marketing ({scene_count} escenas).",
+            )
+
+        except Exception as e:
+            self.append_chat("Error", f"❌ Error al cargar proyecto: {e}")
+
+        # Botón Generar Marketing
+        self._btn_mkt_generate = ctk.CTkButton(
+            left_panel,
+            text="🚀 Generar Marketing Launch Kit",
+            command=self._mkt_generate_from_studio,
+            font=("JetBrains Mono", 11, "bold"),
+            fg_color="#FF6B35",
+            hover_color="#E85A24",
+            text_color="#FFFFFF",
+            height=40,
+        )
+        self._btn_mkt_generate.grid(row=2, column=0, sticky="ew", padx=8, pady=(4, 4))
+
+        # Botón Generar Videos de Marketing
+        self._btn_mkt_videos = ctk.CTkButton(
+            left_panel,
+            text="📹 Generar 15 Videos de Marketing",
+            command=self._mkt_generate_videos,
+            font=("JetBrains Mono", 11, "bold"),
+            fg_color="#E74C3C",
+            hover_color="#C0392B",
+            text_color="#FFFFFF",
+            height=40,
+        )
+        self._btn_mkt_videos.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+        # Botón Cargar Curso Existente - DARK RED TEAM
+        self._btn_mkt_load_course = ctk.CTkButton(
+            left_panel,
+            text="📂 Cargar Curso",
+            command=self._mkt_load_course,
+            font=("JetBrains Mono", 11, "bold"),
+            fg_color=COLORS["accent_cyan"],
+            hover_color=COLORS["accent_cyan_dim"],
+            text_color="#000000",
+            border_color=COLORS["accent_cyan"],
+            border_width=1,
+            height=38,
+        )
+        self._btn_mkt_load_course.grid(
+            row=4, column=0, sticky="ew", padx=8, pady=(0, 8)
+        )
+
+        # Botón Generar Descripción Completa - DARK RED TEAM
+        self._btn_mkt_full_desc = ctk.CTkButton(
+            left_panel,
+            text="📝 Descripción Completa",
+            command=self._mkt_generate_full_description,
+            font=("JetBrains Mono", 11, "bold"),
+            fg_color=COLORS["accent_red"],
+            hover_color="#cc0088",
+            text_color="#ffffff",
+            border_color=COLORS["accent_red"],
+            border_width=1,
+            height=38,
+        )
+        self._btn_mkt_full_desc.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 8))
+
+        # Lista de secciones - DARK RED TEAM
+        sec_header = ctk.CTkFrame(
+            left_panel, fg_color=COLORS["header_bg"], height=28, corner_radius=0
+        )
+        sec_header.grid(row=6, column=0, sticky="ew")
+        ctk.CTkLabel(
+            sec_header,
+            text="📂 SECCIONES",
+            font=("JetBrains Mono", 10, "bold"),
+            text_color=COLORS["accent_red"],
+        ).pack(side="left", padx=10, pady=4)
+
+        self._mkt_sections_scroll = ctk.CTkScrollableFrame(
+            left_panel, fg_color="transparent"
+        )
+        self._mkt_sections_scroll.grid(
+            row=7, column=0, sticky="nsew", padx=4, pady=(0, 8)
+        )
+        self._mkt_section_widgets = []
+        self._mkt_sections = [
+            {
+                "id": "pricing",
+                "icon": "💰",
+                "name": "Estrategia de Precios",
+                "color": COLORS["accent_green"],
+            },
+            {
+                "id": "viral",
+                "icon": "🎬",
+                "name": "Scripts Virales",
+                "color": COLORS["accent_red"],
+            },
+            {
+                "id": "telegram",
+                "icon": "🤖",
+                "name": "Telegram Bot",
+                "color": "#3498DB",
+            },
+            {"id": "ads", "icon": "📢", "name": "Ads Copy", "color": "#ff3333"},
+            {"id": "email", "icon": "📧", "name": "Email Sequence", "color": "#F39C12"},
+            {"id": "pain", "icon": "🔥", "name": "Pain Points", "color": "#E67E22"},
+            {
+                "id": "objetivos",
+                "icon": "🎯",
+                "name": "Objetivos Curso",
+                "color": "#1ABC9C",
+            },
+            {
+                "id": "videos",
+                "icon": "📹",
+                "name": "15 Videos Marketing",
+                "color": "#ff3333",
+            },
+        ]
+
+        for sec in self._mkt_sections:
+            btn = ctk.CTkButton(
+                self._mkt_sections_scroll,
+                text=f"{sec['icon']} {sec['name']}",
+                command=lambda s=sec: self._mkt_show_section(s["id"]),
+                font=("JetBrains Mono", 10),
+                fg_color=COLORS["bg_dark"],
+                hover_color=sec["color"],
+                text_color=COLORS["text_dim"],
+                height=36,
+                anchor="w",
+            )
+            btn.pack(fill="x", pady=2, padx=4)
+            self._mkt_section_widgets.append(
+                {"btn": btn, "id": sec["id"], "data": None}
+            )
+
+        # ════════════════════════════════════════
+        # PANEL DERECHO — Visualizador de Contenido
+        # ════════════════════════════════════════
+        right_panel = ctk.CTkFrame(
+            self.tab4,
+            fg_color=COLORS["bg_panel"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        right_panel.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=(8, 8))
+        right_panel.grid_rowconfigure(1, weight=1)
+        right_panel.grid_columnconfigure(0, weight=1)
+
+        # Header
+        rh = ctk.CTkFrame(
+            right_panel, fg_color=COLORS["header_bg"], height=36, corner_radius=0
+        )
+        rh.grid(row=0, column=0, sticky="ew")
+        self._mkt_content_title = ctk.CTkLabel(
+            rh,
+            text="📋 Selecciona una sección",
+            font=("JetBrains Mono", 11, "bold"),
+            text_color=COLORS["accent_cyan"],
+        )
+        self._mkt_content_title.pack(side="left", padx=10, pady=6)
+
+        # Tabview para contenido - DARK RED TEAM
+        self._mkt_content_tabs = ctk.CTkTabview(
+            right_panel,
+            fg_color=COLORS["bg_dark"],
+            segmented_button_fg_color=COLORS["bg_panel"],
+            segmented_button_selected_color=COLORS["accent_red"],
+            segmented_button_selected_hover_color=COLORS["accent_red_dim"],
+            segmented_button_unselected_color=COLORS["bg_dark"],
+            segmented_button_unselected_hover_color=COLORS["bg_hover"],
+            text_color=COLORS["text_primary"],
+            corner_radius=8,
+        )
+        self._mkt_content_tabs.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+
+        # Pestañas de contenido
+        self._mkt_content_tabs.add("📋 Info")
+        self._mkt_tab_info = self._mkt_content_tabs.tab("📋 Info")
+
+        # Info tab - Welcome message - DARK RED TEAM
+        info_frame = ctk.CTkScrollableFrame(self._mkt_tab_info, fg_color="transparent")
+        info_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        ctk.CTkLabel(
+            info_frame,
+            text="🚀 MARKETING LAUNCH STUDIO",
+            font=("JetBrains Mono", 16, "bold"),
+            text_color=COLORS["accent_red"],
+        ).pack(pady=(20, 10))
+
+        ctk.CTkLabel(
+            info_frame,
+            text="Crea tu kit de lanzamiento de ventas para Hotmart.\n\n"
+            "PASOS:\n"
+            "1️⃣ Genera un curso en la pestaña 'Orquestador'\n"
+            "2️⃣ Haz clic en '🚀 Generar Marketing Launch Kit'\n"
+            "3️⃣ Explora cada sección del marketing\n\n"
+            "Incluye:\n"
+            "• 💰 Estrategia de precios\n"
+            "• 🎬 Scripts virales para TikTok/Instagram\n"
+            "• 🤖 Flujo del Telegram Bot\n"
+            "• 📢 Copia para anuncios\n"
+            "• 📧 Secuencia de emails\n"
+            "• 🔥 Pain points y objetivos",
+            font=("JetBrains Mono", 10),
+            text_color=COLORS["text_primary"],
+            justify="left",
+        ).pack(pady=10)
+
+        # Botón ir a curso
+        ctk.CTkButton(
+            info_frame,
+            text="📚 Ir a Generar Curso",
+            command=lambda: self.tabview.set("🎬 Orquestador de Series"),
+            font=("JetBrains Mono", 11, "bold"),
+            fg_color=COLORS["accent_red"],
+            hover_color="#cc2222",
+            text_color="#FFFFFF",
+            height=40,
+        ).pack(pady=20)
+
+    def _mkt_show_section(self, section_id):
+        """Muestra el contenido de una sección específica."""
+        # Encontrar datos de la sección
+        section_data = None
+        section_name = ""
+
+        for sec in self._mkt_sections:
+            if sec["id"] == section_id:
+                section_name = sec["name"]
+                break
+
+        section_data = None
+
+        if section_id == "videos":
+            section_name = "📹 15 Videos de Marketing"
+            if hasattr(self, "course_orchestrator") and self.course_orchestrator:
+                section_data = getattr(
+                    self.course_orchestrator, "_mkt_videos_data", None
+                )
+                if section_data is None:
+                    section_data = self.course_orchestrator.load_marketing_videos()
+        else:
+            if hasattr(self, "course_orchestrator") and self.course_orchestrator:
+                mkt_data = getattr(self.course_orchestrator, "_mkt_data", None)
+                if mkt_data is None:
+                    mkt_data = self.course_orchestrator.load_marketing_plan()
+                if mkt_data:
+                    section_map = {
+                        "pricing": ("pricing_strategy", "💰 Estrategia de Precios"),
+                        "viral": ("viral_scripts", "🎬 Scripts Virales"),
+                        "telegram": ("telegram_bot_flow", "🤖 Telegram Bot Flow"),
+                        "ads": ("ads_copy", "📢 Ads Copy"),
+                        "email": ("email_sequence", "📧 Email Sequence"),
+                        "pain": ("pain_points", "🔥 Pain Points"),
+                        "objetivos": (
+                            "objetivos_curso_marketing",
+                            "🎯 Objetivos del Curso",
+                        ),
+                    }
+                    if section_id in section_map:
+                        key, section_name = section_map[section_id]
+                        section_data = mkt_data.get(key)
+
+        # Actualizar título
+        self._mkt_content_title.configure(text=f"📋 {section_name}")
+
+        # Eliminar pestaña existente
+        tab_name = f"mkt_{section_id}"
+        try:
+            self._mkt_content_tabs.delete(tab_name)
+        except:
+            pass
+
+        # Crear nueva pestaña
+        self._mkt_content_tabs.add(tab_name)
+        tab = self._mkt_content_tabs.tab(tab_name)
+
+        if section_id == "videos":
+            self._mkt_render_videos(tab, section_data)
+        else:
+            # Scrollable frame para otras secciones
+            content = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+            content.pack(fill="both", expand=True, padx=10, pady=10)
+
+            if section_data is None:
+                ctk.CTkLabel(
+                    content,
+                    text="⚠️ No hay datos disponibles.\nGenera el Marketing Launch Kit primero.",
+                    font=("JetBrains Mono", 11),
+                    text_color=COLORS["text_dim"],
+                ).pack(pady=40)
+            elif isinstance(section_data, dict):
+                self._mkt_render_dict(content, section_data)
+            elif isinstance(section_data, list):
+                self._mkt_render_list(content, section_data)
+            else:
+                ctk.CTkLabel(
+                    content,
+                    text=str(section_data),
+                    font=("JetBrains Mono", 10),
+                    text_color=COLORS["text_primary"],
+                ).pack(pady=10)
+
+        self._mkt_content_tabs.set(tab_name)
 
     def _mkt_render_videos(self, tab, videos_data):
         """Renderiza los 15 videos de marketing con editor JSON."""
@@ -5285,13 +5357,10 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
                     stderr=sp.DEVNULL,
                 )
                 time.sleep(1.5)
-                # Terminal B: normal
-                sp.Popen(["konsole"], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-                time.sleep(1.5)
-            else:
-                # Solo Terminal B
-                sp.Popen(["konsole"], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-                time.sleep(1.5)
+
+            # Terminal B: normal
+            sp.Popen(["konsole"], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            time.sleep(1.5)
         except FileNotFoundError:
             self.after(0, self.append_chat, "Error", "❌ Konsole no encontrado.")
             return
@@ -5350,13 +5419,13 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             except Exception:
                 screen_w, screen_h = 1920, 1080
 
-            # Leer formato para decidir geometría
+            # Leer formato para decidir geometría (is_vertical prevalece sobre is_solo)
             aspect = ""
             if hasattr(self, "orchestrator_format_var"):
                 aspect = self.orchestrator_format_var.get()
             elif hasattr(self, "format_combo"):
                 aspect = self.format_combo.get()
-            is_vertical = "9:16" in aspect and not is_solo
+            is_vertical = "9:16" in aspect
 
             if is_vertical:
                 # VERTICAL (9:16): Terminal B con resize exacto 60x40
@@ -5499,10 +5568,8 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
                 )
 
             if callback:
-                print(f"DEBUG: Calling callback after startup, wid_b={self.wid_b}")
                 self.after(1000, callback)
         except Exception as e:
-            print(f"DEBUG: Exception in startup: {e}")
             self.after(0, self.append_chat, "Error", f"⚠ {e}")
 
     # ═══════════════════════════════════════════════
@@ -6243,42 +6310,27 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             wid_a=self.wid_a,
             wid_b=self.wid_b,
             project_name=project_name,
-            progress_callback=self._director_update_progress,
+            aspect_ratio=aspect,
+            obs_password=self._load_env_value("OBS_PASSWORD", ""),
+            auto_record=auto_record,
+            terminals_preconfigured=True,
         )
         self._active_director.floating_ctrl = self._floating_ctrl
 
+        # Registrar callback de fin para re-habilitar botones
+        def _on_finished():
+            self.after(0, self._on_director_finished)
+
+        self._active_director.on_finished = _on_finished
+
         # Lanzar en thread daemon
         threading.Thread(
-            target=self._director_thread, args=(self._active_director,), daemon=True
+            target=self._active_director.setup_and_run, daemon=True
         ).start()
 
-    def _director_thread(self, director):
-        """Hilo que ejecuta el director y limpia."""
-        director.run()
-        self.after(0, self._on_director_finished)
-
-    def _director_update_progress(self, current: int, total: int):
-        """Callback para actualizar el floating control desde el director."""
-        if self._floating_ctrl:
-            self.after(0, lambda: self._floating_ctrl.set_progress(current, total))
-
-    def _on_director_finished(self):
-        """Se ejecuta en el hilo principal cuando el director termina."""
-        self.append_chat("Sistema", "✅ Secuencia finalizada.")
-
-        # Resetear widget flotante
-        if self._floating_ctrl:
-            self._floating_ctrl._set_idle()
-
-        # Resetear botones del orquestador si existen
-        if hasattr(self, "btn_chap_stop"):
-            self.btn_chap_stop.configure(state="disabled")
-        if hasattr(self, "btn_chap_duo"):
-            self.btn_chap_duo.configure(state="normal")
-        if hasattr(self, "btn_chap_solo"):
-            self.btn_chap_solo.configure(state="normal")
-
-        self._active_director = None
+        # Reforzar tamaño de terminal 1.5s y 3s después
+        self.after(1500, self._reinforce_terminal_size)
+        self.after(3000, self._reinforce_terminal_size)
 
     def stop_director(self):
         """Detiene la secuencia del Director y mata procesos en la terminal."""
@@ -6292,19 +6344,19 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         try:
             if self.wid_b:
                 sp.run(
-                    ["xdotool", "key", "--window", str(self.wid_b), "ctrl+c"],
+                    ["xdotool", "key", "--window", str(self.wid_b), "ctrl+c"],  # type: ignore
                     capture_output=True,
                     timeout=3,
                 )
                 time.sleep(0.2)
                 sp.run(
-                    ["xdotool", "key", "--window", str(self.wid_b), "ctrl+c"],
+                    ["xdotool", "key", "--window", str(self.wid_b), "ctrl+c"],  # type: ignore
                     capture_output=True,
                     timeout=3,
                 )
             if self.wid_a and self.wid_a != self.wid_b:
                 sp.run(
-                    ["xdotool", "key", "--window", str(self.wid_a), "ctrl+c"],
+                    ["xdotool", "key", "--window", str(self.wid_a), "ctrl+c"],  # type: ignore
                     capture_output=True,
                     timeout=3,
                 )
@@ -6320,7 +6372,7 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
         # Resetear widget flotante
         if self._floating_ctrl:
-            self._floating_ctrl._set_idle()
+            self._floating_ctrl._set_idle()  # type: ignore
 
     def _on_director_finished(self):
         """Callback del MasterDirector al finalizar — re-habilita botones."""
@@ -6705,1255 +6757,3 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         except json.JSONDecodeError as e:
             self.append_chat("Error", f"❌ JSON inválido: {e}")
             return None
-
-    def _build_opencode_chat_panel(self):
-        """Opencode tab — Chat panel for interacting with the AI about the project."""
-        panel = ctk.CTkFrame(
-            self.tab6,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=12,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        panel.grid(row=0, column=0, sticky="nsew", padx=(4, 2), pady=8)
-        panel.grid_rowconfigure(1, weight=1)
-        panel.grid_columnconfigure(0, weight=1)
-
-        # Header
-        header = ctk.CTkFrame(
-            panel, fg_color=COLORS["header_bg"], height=48, corner_radius=0
-        )
-        header.grid(row=0, column=0, sticky="ew")
-        header.pack_propagate(False)
-        ctk.CTkLabel(header, text="🧠", font=("Arial", 20)).pack(
-            side="left", padx=(12, 4)
-        )
-        ctk.CTkLabel(
-            header,
-            text="OPENCODE AI",
-            font=("JetBrains Mono", 14, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-        self._opencode_chat_status_label = ctk.CTkLabel(
-            header,
-            text="● EN LÍNEA",
-            font=("JetBrains Mono", 10),
-            text_color=COLORS["accent_green"],
-        )
-        self._opencode_chat_status_label.pack(side="right", padx=12)
-
-        # Chat display
-        self._opencode_chat_display = ctk.CTkTextbox(
-            panel,
-            wrap="word",
-            font=("JetBrains Mono", 12),
-            fg_color=COLORS["bg_chat"],
-            text_color=COLORS["text_primary"],
-            state="disabled",
-            border_width=0,
-            height=250,
-        )
-        self._opencode_chat_display.grid(
-            row=1, column=0, sticky="nsew", padx=6, pady=(4, 4)
-        )
-
-        # Configure tags for messages
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_system", foreground=COLORS["accent_yellow"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_user", foreground=COLORS["accent_cyan"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_ai", foreground=COLORS["accent_green"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_error", foreground=COLORS["accent_red"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_msg_body", foreground=COLORS["text_primary"]
-        )
-
-        # Input
-        input_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        input_frame.grid(row=2, column=0, sticky="ew", padx=6, pady=(0, 6))
-        self._opencode_chat_entry = ctk.CTkEntry(
-            input_frame,
-            placeholder_text="Pídele a la AI que analice la salida o sugiera próximos pasos...",
-            font=("JetBrains Mono", 12),
-            fg_color=COLORS["bg_dark"],
-            border_color=COLORS["border"],
-        )
-        self._opencode_chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        self._opencode_chat_entry.bind(
-            "<Return>", lambda e: self._opencode_send_chat_message()
-        )
-        self._opencode_chat_btn = ctk.CTkButton(
-            input_frame,
-            text="⚡",
-            width=45,
-            command=self._opencode_send_chat_message,
-            font=("Arial", 18),
-            fg_color=COLORS["accent_cyan"],
-            text_color="#000000",
-            hover_color="#00b8d4",
-        )
-        self._opencode_chat_btn.pack(side="right")
-
-    def _opencode_send_chat_message(self):
-        """Send a message in the Opencode chat and get AI response."""
-        user_text = self._opencode_chat_entry.get().strip()
-        if not user_text:
-            return
-        self._opencode_chat_entry.delete(0, "end")
-        self._opencode_append_chat("Tú", user_text)
-        self._opencode_chat_entry.configure(state="disabled")
-        self._opencode_chat_btn.configure(state="disabled")
-        self._opencode_chat_status_label.configure(
-            text="⚡ PROCESANDO", text_color=COLORS["accent_yellow"]
-        )
-        threading.Thread(
-            target=self._opencode_process_chat, args=(user_text,), daemon=True
-        ).start()
-
-    def _opencode_append_chat(self, sender: str, text: str):
-        """Append a styled message to the Opencode chat display."""
-        self._opencode_chat_display.configure(state="normal")
-        tb = self._opencode_chat_display._textbox
-        sender_lower = sender.lower()
-        if sender_lower in ("sistema",):
-            tag = "opencode_sender_system"
-        elif sender_lower in ("tú",):
-            tag = "opencode_sender_user"
-        elif sender_lower in ("opencode ai", "ai"):
-            tag = "opencode_sender_ai"
-        else:
-            tag = "opencode_sender_error"
-        tb.insert("end", f"[{sender}] ", tag)
-        tb.insert("end", f"{text}\n\n", "opencode_msg_body")
-        self._opencode_chat_display.see("end")
-        self._opencode_chat_display.configure(state="disabled")
-
-    def _opencode_process_chat(self, prompt: str):
-        """Process a chat message in a background thread."""
-        try:
-            # For now, just echo and suggest a next step
-            response = f"[OPENCODE AI] He recibido: '{prompt}'. Para continuar con el desarrollo iterativo, necesitas proporcionar un JSON inicial en el editor y presionar 'Iniciar Iteración'."
-            self.after(0, self._opencode_append_chat, "OPENCODE AI", response)
-        except Exception as e:
-            self.after(0, self._opencode_append_chat, "Error", f"❌ {str(e)}")
-        finally:
-            self.after(0, lambda: self._opencode_chat_entry.configure(state="normal"))
-            self.after(0, lambda: self._opencode_chat_btn.configure(state="normal"))
-            self.after(
-                0,
-                lambda: self._opencode_chat_status_label.configure(
-                    text="● EN LÍNEA", text_color=COLORS["accent_green"]
-                ),
-            )
-
-    def _build_opencode_editor_panel(self):
-        """Opencode tab — Editor panel for the iterative JSON."""
-        panel = ctk.CTkFrame(
-            self.tab6,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=12,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        panel.grid(row=0, column=1, sticky="nsew", padx=(2, 4), pady=8)
-        panel.grid_rowconfigure(1, weight=1)
-        panel.grid_columnconfigure(0, weight=1)
-
-        # Header
-        header = ctk.CTkFrame(
-            panel, fg_color=COLORS["header_bg"], height=42, corner_radius=0
-        )
-        header.grid(row=0, column=0, sticky="ew")
-        header.pack_propagate(False)
-        ctk.CTkLabel(header, text="📝", font=("Arial", 18)).pack(
-            side="left", padx=(12, 4)
-        )
-        ctk.CTkLabel(
-            header,
-            text="OPENCODE EDITOR",
-            font=("JetBrains Mono", 13, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-
-        # Editor container with line numbers and syntax highlighting (similar to main editor)
-        editor_container = ctk.CTkFrame(panel, fg_color="transparent")
-        editor_container.grid(row=1, column=0, sticky="nsew", padx=6, pady=(2, 6))
-        editor_container.grid_rowconfigure(1, weight=1)
-        editor_container.grid_columnconfigure(0, weight=1)
-
-        # Line numbers
-        self._opencode_line_numbers = tk.Text(
-            editor_container,
-            width=4,
-            bg="#08090a",
-            fg="#3a3a5a",
-            font=("JetBrains Mono", 10),
-            state="disabled",
-            relief="flat",
-            bd=0,
-            selectbackground="#08090a",
-            highlightthickness=0,
-            padx=6,
-            pady=4,
-        )
-        self._opencode_line_numbers.pack(side="left", fill="y")
-
-        # Main editor
-        self._opencode_editor = tk.Text(
-            editor_container,
-            bg=COLORS["bg_editor"],
-            fg=COLORS["text_primary"],
-            font=("JetBrains Mono", 10),
-            insertbackground=COLORS["accent_cyan"],
-            selectbackground="#1a2a4a",
-            relief="flat",
-            bd=0,
-            wrap="word",
-            highlightthickness=0,
-            padx=8,
-            pady=4,
-            undo=True,
-        )
-        self._opencode_editor.pack(side="left", fill="both", expand=True)
-
-        # Scrollbar
-        _opencode_scrollbar = ctk.CTkScrollbar(
-            editor_container, command=self._opencode_editor.yview
-        )
-        _opencode_scrollbar.pack(side="right", fill="y")
-        self._opencode_editor.configure(yscrollcommand=self._opencode_sync_scroll)
-
-        # Syntax highlighting tags
-        for ed in [self._opencode_editor]:
-            ed.tag_config("opencode_json_key", foreground="#9CDCFE")
-            ed.tag_config("opencode_json_string", foreground="#CE9178")
-            ed.tag_config("opencode_json_bracket", foreground="#FFD700")
-            ed.tag_config("opencode_json_keyword", foreground="#C586C0")
-            ed.tag_config("opencode_json_colon", foreground="#D4D4D4")
-            ed.tag_config("opencode_json_number", foreground="#B5CEA8")
-
-        # Bind events for auto-save and line numbers
-        self._opencode_editor.bind(
-            "<KeyRelease>", lambda e: self._opencode_schedule_auto_save()
-        )
-        self._opencode_editor.bind(
-            "<ButtonRelease-1>", lambda e: self._opencode_update_line_numbers()
-        )
-
-        # Control buttons below the editor
-        btn_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, sticky="ew", padx=6, pady=(0, 6))
-
-        self._opencode_start_btn = ctk.CTkButton(
-            btn_frame,
-            text="▶️ Iniciar Iteración",
-            command=self._opencode_start_iteration,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_cyan"],
-        )
-        self._opencode_start_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
-
-        self._opencode_stop_btn = ctk.CTkButton(
-            btn_frame,
-            text="⏹ Detener",
-            command=self._opencode_stop_iteration,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_red"],
-        )
-        self._opencode_stop_btn.pack(side="left", expand=True, fill="x", padx=5)
-        self._opencode_stop_btn.configure(state="disabled")
-
-        self._opencode_export_btn = ctk.CTkButton(
-            btn_frame,
-            text="💾 Exportar para Kdenlive",
-            command=self._opencode_export_for_kdenlive,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_yellow"],
-        )
-        self._opencode_export_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
-        self._opencode_export_btn.configure(state="disabled")
-
-    def _opencode_sync_scroll(self, *args):
-        self._opencode_line_numbers.yview_moveto(args[0] if args else 0)
-
-    def _opencode_update_line_numbers(self):
-        content = self._opencode_editor.get("1.0", "end-1c")
-        lines = content.split("\n")
-        ln_text = "\n".join(str(i + 1) for i in range(len(lines)))
-        self._opencode_line_numbers.configure(state="normal")
-        self._opencode_line_numbers.delete("1.0", "end")
-        self._opencode_line_numbers.insert("1.0", ln_text)
-        self._opencode_line_numbers.configure(state="disabled")
-        self._opencode_line_numbers.yview_moveto(self._opencode_editor.yview()[0])
-
-    def _opencode_schedule_auto_save(self):
-        # Placeholder for auto-save logic (similar to main editor)
-        if self._opencode_auto_save_after_id:
-            self.after_cancel(self._opencode_auto_save_after_id)
-        self._opencode_auto_save_after_id = self.after(
-            self._auto_save_delay_ms, self._opencode_perform_auto_save
-        )
-
-    def _opencode_perform_auto_save(self):
-        self._opencode_auto_save_after_id = None
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            return
-        try:
-            json_data = json.loads(json_str)
-            if isinstance(json_data, list):
-                # Use the same auto-save project logic as main editor but maybe with a different prefix?
-                self._opencode_auto_save_project(json_data)
-        except json.JSONDecodeError:
-            pass
-
-    def _opencode_auto_save_project(self, json_data: list):
-        # Save to a special opencode autosave folder or just use the main projects dir with a tag?
-        title = self._extract_project_title(json_data)
-        if not title:
-            title = f"opencode_{int(time.time())}"
-        proj_dir = os.path.join(self.projects_dir, title)
-        os.makedirs(proj_dir, exist_ok=True)
-        filepath = os.path.join(proj_dir, "guion.json")
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(json_data, f, indent=4, ensure_ascii=False)
-            # Optionally update a label to show the autosave project name
-        except Exception:
-            pass
-
-    def _opencode_start_iteration(self):
-        # Placeholder for starting the iterative process
-        self._opencode_append_chat(
-            "Sistema", "🚀 Iniciando proceso iterativo Opencode..."
-        )
-        self._opencode_start_btn.configure(state="disabled")
-        self._opencode_stop_btn.configure(state="normal")
-        # Set a flag that the iteration is running
-        self._opencode_is_running = True
-        # We'll implement the actual cycle in a separate method that we call via after
-        self._opencode_iteration_cycle()
-
-    def _opencode_stop_iteration(self):
-        self._opencode_append_chat("Sistema", "⏹ Deteniendo proceso iterativo.")
-        self._opencode_is_running = False
-        self._opencode_start_btn.configure(state="normal")
-        self._opencode_stop_btn.configure(state="disabled")
-        self._opencode_export_btn.configure(
-            state="normal"
-        )  # Enable export after stopping
-
-    def _opencode_export_for_kdenlive(self):
-        self._opencode_append_chat(
-            "Sistema", "🎬 Exportando proyecto para Kdenlive (placeholder)..."
-        )
-        # Here we would generate the TTS scripts and Kdenlive project file
-
-    def _opencode_iteration_cycle(self):
-        """One cycle of the Opencode iterative process."""
-        if not self._opencode_is_running:
-            return
-
-        # 1. Get current JSON from the editor
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            self._opencode_append_chat(
-                "Sistema", "⚠ Editor vacío. Proporcione un JSON inicial."
-            )
-            self._opencode_stop_iteration()
-            return
-        try:
-            current_json = json.loads(json_str)
-            if not isinstance(current_json, list):
-                self._opencode_append_chat(
-                    "Sistema", "⚠ El JSON debe ser un arreglo de escenas."
-                )
-                self._opencode_stop_iteration()
-                return
-        except json.JSONDecodeError as e:
-            self._opencode_append_chat("Sistema", f"⚠ JSON inválido: {e}")
-            self._opencode_stop_iteration()
-            return
-
-        # 2. Execute the JSON in terminal (we'll need to implement a safe executor)
-        # For now, we'll simulate execution and then use the AI to analyze and suggest next steps.
-        self._opencode_append_chat(
-            "Sistema", "🔧 Ejecutando JSON actual en terminal (simulado)..."
-        )
-        # In a real implementation, we would capture the output of executing the commands.
-        # For this placeholder, we'll just pretend we got some output.
-        execution_result = {
-            "success": True,
-            "output": "Simulated execution: all commands succeeded.",
-            # In reality, we would have more detailed output per command.
-        }
-
-        # 3. Use the AI to analyze the output and suggest next steps
-        self._opencode_append_chat("Sistema", "🤖 Analizando resultados con la AI...")
-        # We'll create a prompt for the AI to analyze the execution and update the JSON.
-        # For brevity, we'll use a simple placeholder response.
-        # In a full implementation, we would call the AI engine with a detailed prompt.
-        ai_suggestion = {
-            "analysis": "La ejecución fue exitosa. Próximos pasos: añadir una escena de conclusión y exportar.",
-            "next_json": current_json
-            + [
-                {
-                    "tipo": "narracion",
-                    "voz": "En este punto, hemos completado los pasos iniciales. El siguiente paso sería finalizar y exportar el proyecto.",
-                }
-            ],
-        }
-
-        # 4. Update the editor with the new JSON from the AI
-        self._opencode_editor.delete("1.0", "end")
-        self._opencode_editor.insert(
-            "end", json.dumps(ai_suggestion["next_json"], indent=4, ensure_ascii=False)
-        )
-        self._opencode_update_line_numbers()
-        self._opencode_append_chat("OPENCODE AI", ai_suggestion["analysis"])
-
-        # 5. Check if we should stop (for now, we'll stop after one cycle for demonstration)
-        # In a real implementation, we would have a condition to detect when the project is complete.
-        self._opencode_append_chat(
-            "Sistema", "🔄 Ciclo completado. Deteniendo por demostración."
-        )
-        self._opencode_stop_iteration()
-
-        # In a real version, we would not stop here but schedule another cycle:
-        # if self._opencode_is_running:
-        #     self.after(2000, self._opencode_iteration_cycle)
-
-    def _build_opencode_tab(self):
-        # Initialize state variables for the Opencode iterative process
-        if not hasattr(self, "_opencode_is_running"):
-            self._opencode_is_running = False
-        if not hasattr(self, "_opencode_auto_save_after_id"):
-            self._opencode_auto_save_after_id = None
-        if not hasattr(self, "_opencode_iteration_after_id"):
-            self._opencode_iteration_after_id = None
-
-        # Create a main frame for the tab with two columns: chat and editor
-        main_frame = ctk.CTkFrame(self.tab6, fg_color="transparent")
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        self.tab6.grid_rowconfigure(0, weight=1)
-        self.tab6.grid_columnconfigure(0, weight=1)
-        main_frame.grid_rowconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(1, weight=1)
-
-        # === LEFT PANEL: CHAT ===
-        chat_frame = ctk.CTkFrame(
-            main_frame, fg_color=COLORS["bg_panel"], corner_radius=8
-        )
-        chat_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 3), pady=0)
-        chat_frame.grid_rowconfigure(1, weight=1)
-        chat_frame.grid_columnconfigure(0, weight=1)
-
-        # Chat header
-        chat_header = ctk.CTkFrame(
-            chat_frame, fg_color=COLORS["header_bg"], height=40, corner_radius=0
-        )
-        chat_header.grid(row=0, column=0, sticky="ew")
-        chat_header.grid_propagate(False)
-        ctk.CTkLabel(chat_header, text="💬", font=("Arial", 18)).pack(
-            side="left", padx=(10, 5)
-        )
-        ctk.CTkLabel(
-            chat_header,
-            text="OPENCODE CHAT",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-        self._opencode_chat_status_label = ctk.CTkLabel(
-            chat_header,
-            text="● IDLE",
-            font=("JetBrains Mono", 10),
-            text_color=COLORS["text_dim"],
-        )
-        self._opencode_chat_status_label.pack(side="right", padx=10)
-
-        # Chat display
-        self._opencode_chat_display = ctk.CTkTextbox(
-            chat_frame,
-            wrap="word",
-            font=("JetBrains Mono", 11),
-            fg_color=COLORS["bg_chat"],
-            text_color=COLORS["text_primary"],
-            state="disabled",
-            border_width=0,
-            height=200,
-        )
-        self._opencode_chat_display.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-
-        # Configure chat tags
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_system", foreground=COLORS["accent_yellow"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_user", foreground=COLORS["accent_cyan"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_ai", foreground=COLORS["accent_green"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_sender_error", foreground=COLORS["accent_red"]
-        )
-        self._opencode_chat_display._textbox.tag_config(
-            "opencode_msg_body", foreground=COLORS["text_primary"]
-        )
-
-        # Chat input
-        chat_input_frame = ctk.CTkFrame(chat_frame, fg_color="transparent")
-        chat_input_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=(0, 5))
-        self._opencode_chat_entry = ctk.CTkEntry(
-            chat_input_frame,
-            placeholder_text="Escribe un mensaje para la IA...",
-            font=("JetBrains Mono", 11),
-            fg_color=COLORS["bg_dark"],
-            border_color=COLORS["border"],
-        )
-        self._opencode_chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        self._opencode_chat_entry.bind(
-            "<Return>", lambda e: self._opencode_send_chat_message()
-        )
-        self._opencode_chat_btn = ctk.CTkButton(
-            chat_input_frame,
-            text="⚡",
-            width=35,
-            command=self._opencode_send_chat_message,
-            font=("Arial", 14),
-            fg_color=COLORS["accent_cyan"],
-            text_color="#000000",
-            hover_color="#00b8d4",
-        )
-        self._opencode_chat_btn.pack(side="right")
-
-        # === RIGHT PANEL: EDITOR AND CONTROLS ===
-        editor_frame = ctk.CTkFrame(
-            main_frame, fg_color=COLORS["bg_panel"], corner_radius=8
-        )
-        editor_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0), pady=0)
-        editor_frame.grid_rowconfigure(1, weight=1)
-        editor_frame.grid_columnconfigure(0, weight=1)
-        editor_frame.grid_rowconfigure(2, weight=0)  # For control buttons
-
-        # Editor header
-        editor_header = ctk.CTkFrame(
-            editor_frame, fg_color=COLORS["header_bg"], height=40, corner_radius=0
-        )
-        editor_header.grid(row=0, column=0, sticky="ew")
-        editor_header.grid_propagate(False)
-        ctk.CTkLabel(editor_header, text="📄", font=("Arial", 18)).pack(
-            side="left", padx=(10, 5)
-        )
-        ctk.CTkLabel(
-            editor_header,
-            text="OPENCODE EDITOR",
-            font=("JetBrains Mono", 12, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-
-        # Editor with line numbers
-        editor_container = ctk.CTkFrame(editor_frame, fg_color="transparent")
-        editor_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        editor_container.grid_rowconfigure(1, weight=1)
-        editor_container.grid_columnconfigure(0, weight=1)
-
-        # Line numbers
-        self._opencode_line_numbers = tk.Text(
-            editor_container,
-            width=4,
-            bg="#08090a",
-            fg="#3a3a5a",
-            font=("JetBrains Mono", 10),
-            state="disabled",
-            relief="flat",
-            bd=0,
-            selectbackground="#08090a",
-            highlightthickness=0,
-            padx=6,
-            pady=4,
-        )
-        self._opencode_line_numbers.pack(side="left", fill="y")
-
-        # Main editor
-        self._opencode_editor = tk.Text(
-            editor_container,
-            bg=COLORS["bg_editor"],
-            fg=COLORS["text_primary"],
-            font=("JetBrains Mono", 10),
-            insertbackground=COLORS["accent_cyan"],
-            selectbackground="#1a2a4a",
-            relief="flat",
-            bd=0,
-            wrap="word",
-            highlightthickness=0,
-            padx=8,
-            pady=4,
-            undo=True,
-        )
-        self._opencode_editor.pack(side="left", fill="both", expand=True)
-
-        # Scrollbar for editor
-        _opencode_scrollbar = ctk.CTkScrollbar(
-            editor_container, command=self._opencode_editor.yview
-        )
-        _opencode_scrollbar.pack(side="right", fill="y")
-        self._opencode_editor.configure(yscrollcommand=self._opencode_sync_scroll)
-
-        # Syntax highlighting tags for the editor
-        self._opencode_editor.tag_config("opencode_json_key", foreground="#9CDCFE")
-        self._opencode_editor.tag_config("opencode_json_string", foreground="#CE9178")
-        self._opencode_editor.tag_config("opencode_json_bracket", foreground="#FFD700")
-        self._opencode_editor.tag_config("opencode_json_keyword", foreground="#C586C0")
-        self._opencode_editor.tag_config("opencode_json_colon", foreground="#D4D4D4")
-        self._opencode_editor.tag_config("opencode_json_number", foreground="#B5CEA8")
-
-        # Bind events for auto-save and line number updates
-        self._opencode_editor.bind(
-            "<KeyRelease>", lambda e: self._opencode_schedule_auto_save()
-        )
-        self._opencode_editor.bind(
-            "<ButtonRelease-1>", lambda e: self._opencode_update_line_numbers()
-        )
-
-        # Control buttons below the editor
-        btn_frame = ctk.CTkFrame(editor_frame, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=(0, 5))
-
-        self._opencode_start_btn = ctk.CTkButton(
-            btn_frame,
-            text="▶️ Iniciar Iteración",
-            command=self._opencode_start_iteration,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_cyan"],
-        )
-        self._opencode_start_btn.pack(side="left", expand=True, fill="x", padx=(0, 3))
-
-        self._opencode_stop_btn = ctk.CTkButton(
-            btn_frame,
-            text="⏹ Detener",
-            command=self._opencode_stop_iteration,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_red"],
-        )
-        self._opencode_stop_btn.pack(side="left", expand=True, fill="x", padx=3)
-        self._opencode_stop_btn.configure(state="disabled")
-
-        self._opencode_export_btn = ctk.CTkButton(
-            btn_frame,
-            text="🚀 Ejecutar en Terminal",
-            command=self._opencode_execute_in_terminal,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            border_width=1,
-            border_color=COLORS["accent_green"],
-        )
-        self._opencode_export_btn.pack(side="left", expand=True, fill="x", padx=(3, 0))
-        self._opencode_export_btn.configure(state="disabled")
-
-        self._opencode_test_btn = ctk.CTkButton(
-            btn_frame,
-            text="🐞 Test Terminal",
-            command=self._opencode_test_terminal,
-            font=("JetBrains Mono", 11, "bold"),
-            height=35,
-            fg_color="#3D3D3D",
-            hover_color="#555555",
-        )
-        self._opencode_test_btn.pack(side="left", padx=(5, 0))
-
-        # Status label for iteration progress
-        self._opencode_iteration_status_label = ctk.CTkLabel(
-            editor_frame,
-            text="Listo para comenzar",
-            font=("JetBrains Mono", 10),
-            text_color=COLORS["text_dim"],
-            height=20,
-        )
-        self._opencode_iteration_status_label.grid(
-            row=3, column=0, sticky="ew", padx=5, pady=(0, 5)
-        )
-
-    def _opencode_test_terminal(self):
-        """Función de diagnóstico para probar el control de la terminal."""
-        self._opencode_append_chat("Sistema", "🐞 Iniciando test de terminal...")
-        if not self.wid_b:
-            self._opencode_append_chat(
-                "Error", "❌ Terminal B (wid_b) no está definida. Ábrela primero."
-            )
-            return
-
-        self._opencode_append_chat(
-            "Sistema", f"Intentando escribir en WID: {self.wid_b}"
-        )
-
-        # Usar un hilo para no bloquear la UI
-        def test_thread():
-            try:
-                from kr_studio.core.x11_controller import X11Controller
-
-                x11 = X11Controller()
-                # 1. Foco (opcional pero bueno para visibilidad)
-                x11.focus_window(str(self.wid_b))
-                time.sleep(0.5)
-
-                # 2. Escribir comando
-                test_cmd = 'echo "✅ TEST DE TERMINAL EXITOSO"'
-                x11.type_text(str(self.wid_b), test_cmd, speed_pct=100)
-                time.sleep(0.5)
-
-                # 3. Enviar Enter
-                x11.send_key(str(self.wid_b), "Return")
-
-                self.after(
-                    0,
-                    self._opencode_append_chat,
-                    "Sistema",
-                    "✅ Test enviado. Revisa la terminal.",
-                )
-            except Exception as e:
-                self.after(
-                    0, self._opencode_append_chat, "Error", f"❌ Falló el test: {e}"
-                )
-
-        threading.Thread(target=test_thread, daemon=True).start()
-
-    def _opencode_sync_scroll(self, *args):
-        self._opencode_line_numbers.yview_moveto(args[0] if args else 0)
-
-    def _opencode_update_line_numbers(self):
-        content = self._opencode_editor.get("1.0", "end-1c")
-        lines = content.split("\n")
-        ln_text = "\n".join(str(i + 1) for i in range(len(lines)))
-        self._opencode_line_numbers.configure(state="normal")
-        self._opencode_line_numbers.delete("1.0", "end")
-        self._opencode_line_numbers.insert("1.0", ln_text)
-        self._opencode_line_numbers.configure(state="disabled")
-        self._opencode_line_numbers.yview_moveto(self._opencode_editor.yview()[0])
-
-    def _opencode_schedule_auto_save(self):
-        if self._opencode_auto_save_after_id:
-            self.after_cancel(self._opencode_auto_save_after_id)
-        self._opencode_auto_save_after_id = self.after(
-            self._auto_save_delay_ms, self._opencode_perform_auto_save
-        )
-
-    def _opencode_perform_auto_save(self):
-        self._opencode_auto_save_after_id = None
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            return
-        try:
-            json_data = json.loads(json_str)
-            if isinstance(json_data, list):
-                self._opencode_auto_save_project(json_data)
-        except json.JSONDecodeError:
-            pass
-
-    def _opencode_auto_save_project(self, json_data: list):
-        title = self._extract_project_title(json_data)
-        if not title:
-            title = f"opencode_{int(time.time())}"
-        proj_dir = os.path.join(self.projects_dir, title)
-        os.makedirs(proj_dir, exist_ok=True)
-        filepath = os.path.join(proj_dir, "guion.json")
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(json_data, f, indent=4, ensure_ascii=False)
-            # Update a status label if we have one (optional)
-            if hasattr(self, "_opencode_iteration_status_label"):
-                self._opencode_iteration_status_label.configure(
-                    text=f"Proyecto guardado: {title}", text_color=COLORS["accent_cyan"]
-                )
-                self.after(
-                    3000,
-                    lambda: self._opencode_iteration_status_label.configure(
-                        text="Listo para continuar", text_color=COLORS["text_dim"]
-                    ),
-                )
-        except Exception as e:
-            if hasattr(self, "_opencode_iteration_status_label"):
-                self._opencode_iteration_status_label.configure(
-                    text=f"Error al guardar: {e}", text_color=COLORS["accent_red"]
-                )
-
-    def _opencode_send_chat_message(self):
-        user_text = self._opencode_chat_entry.get().strip()
-        if not user_text:
-            return
-        self._opencode_chat_entry.delete(0, "end")
-        self._opencode_append_chat("Tú", user_text)
-        self._opencode_chat_entry.configure(state="disabled")
-        self._opencode_chat_btn.configure(state="disabled")
-        self._opencode_chat_status_label.configure(
-            text="⚡ PROCESANDO", text_color=COLORS["accent_yellow"]
-        )
-        threading.Thread(
-            target=self._opencode_process_chat, args=(user_text,), daemon=True
-        ).start()
-
-    def _opencode_append_chat(self, sender: str, text: str):
-        self._opencode_chat_display.configure(state="normal")
-        tb = self._opencode_chat_display._textbox
-        sender_lower = sender.lower()
-        if sender_lower in ("sistema",):
-            tag = "opencode_sender_system"
-        elif sender_lower in ("tú",):
-            tag = "opencode_sender_user"
-        elif sender_lower in ("opencode ai", "ai"):
-            tag = "opencode_sender_ai"
-        else:
-            tag = "opencode_sender_error"
-        tb.insert("end", f"[{sender}] ", tag)
-        tb.insert("end", f"{text}\n\n", "opencode_msg_body")
-        self._opencode_chat_display.see("end")
-        self._opencode_chat_display.configure(state="disabled")
-
-    def _opencode_process_chat(self, prompt: str):
-        self._opencode_append_chat("OPENCODE AI", "🔄 Generando JSON iterativo...")
-        threading.Thread(
-            target=self._opencode_generate_json, args=(prompt,), daemon=True
-        ).start()
-
-    def _opencode_generate_json(self, prompt: str):
-        try:
-            opencode_prompt = (
-                f"Eres un generador de guiones JSON para videos tutoriales de terminal.\n"
-                f"Crea un guion completo para el tema: {prompt}\n\n"
-                f"Genera EXACTAMENTE un JSON array con este formato:\n"
-                f'[\n  {{\n    "tipo": "narracion",\n    "voz": "Texto de narración para TTS",\n    "espera": 2\n  }},\n  {{\n    "tipo": "ejecucion",\n    "comando_real": "comando de terminal",\n    "voz": "Narración mientras se ejecuta el comando"\n  }},\n  {{\n    "tipo": "pausa",\n    "espera": 3\n  }}\n]\n\n'
-                f"REGLAS:\n"
-                f"- 'narracion': Texto para narrar (TTS) + espera adicional en segundos\n"
-                f"- 'ejecucion': Comando a ejecutar en terminal + narración\n"
-                f"- 'pausa': Pausa pura en segundos (para esperar resultado)\n"
-                f"- Incluye comandos realistas de terminal Linux/Bash\n"
-                f"- La voz describe lo que hace el comando\n"
-                f"Solo responde con el JSON válido, sin markdown ni explicaciones."
-            )
-            response = self.ai.chat(opencode_prompt)
-            text = response.strip()
-            text = re.sub(r"```json\s*", "", text)
-            text = re.sub(r"```\s*", "", text)
-            text = text.strip()
-            json_data = json.loads(text)
-            json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
-
-            def update_editor():
-                self._opencode_editor.delete("1.0", "end")
-                self._opencode_editor.insert("end", json_str)
-                self._opencode_update_line_numbers()
-                self._opencode_append_chat(
-                    "OPENCODE AI",
-                    f"✅ Guion generado con {len(json_data)} escena(s)\n"
-                    "Presiona '🚀 Ejecutar en Terminal' para iniciar.",
-                )
-                self._opencode_iteration_status_label.configure(
-                    text=f"Guion listo: {len(json_data)} escenas",
-                    text_color=COLORS["accent_green"],
-                )
-                self._opencode_export_btn.configure(state="normal")
-
-            response = self.ai.chat(opencode_prompt)
-            text = response.strip()
-            text = re.sub(r"```json\s*", "", text)
-            text = re.sub(r"```\s*", "", text)
-            text = text.strip()
-            json_data = json.loads(text)
-            json_str = json.dumps(json_data, indent=4, ensure_ascii=False)
-
-            def update_editor():
-                self._opencode_editor.delete("1.0", "end")
-                self._opencode_editor.insert("end", json_str)
-                self._opencode_update_line_numbers()
-                self._opencode_append_chat(
-                    "OPENCODE AI",
-                    f"✅ JSON generado con {len(json_data)} escena(s)\n"
-                    "Edita el JSON manualmente o usa 'Iniciar Iteración' para refinarlo.",
-                )
-                self._opencode_iteration_status_label.configure(
-                    text=f"JSON listo: {len(json_data)} escenas",
-                    text_color=COLORS["accent_green"],
-                )
-
-            self.after(0, update_editor)
-        except json.JSONDecodeError as e:
-            self.after(0, self._opencode_append_chat, "Error", f"❌ JSON inválido: {e}")
-        except Exception as e:
-            self.after(0, self._opencode_append_chat, "Error", f"❌ {str(e)}")
-        finally:
-            self.after(0, lambda: self._opencode_chat_entry.configure(state="normal"))
-            self.after(0, lambda: self._opencode_chat_btn.configure(state="normal"))
-            self.after(
-                0,
-                lambda: self._opencode_chat_status_label.configure(
-                    text="● IDLE", text_color=COLORS["text_dim"]
-                ),
-            )
-
-    def _opencode_start_iteration(self):
-        # Validate that we have a JSON in the editor
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            self._opencode_append_chat(
-                "Sistema", "⚠ El editor está vacío. Proporcione un JSON inicial."
-            )
-            return
-        try:
-            data = json.loads(json_str)
-            if not isinstance(data, list):
-                self._opencode_append_chat(
-                    "Sistema", "⚠ El JSON debe ser un arreglo de escenas."
-                )
-                return
-        except json.JSONDecodeError as e:
-            self._opencode_append_chat("Sistema", f"⚠ JSON inválido: {e}")
-            return
-
-        # Start the iteration process
-        self._opencode_is_running = True
-        self._opencode_start_btn.configure(state="disabled")
-        self._opencode_stop_btn.configure(state="normal")
-        self._opencode_export_btn.configure(state="disabled")
-        self._opencode_chat_status_label.configure(
-            text="⚡ EJECUTANDO", text_color=COLORS["accent_yellow"]
-        )
-        self._opencode_iteration_status_label.configure(
-            text="Iniciando proceso iterativo...", text_color=COLORS["accent_cyan"]
-        )
-        self._opencode_append_chat(
-            "Sistema", "🚀 Iniciando proceso iterativo Opencode..."
-        )
-        # Start the iteration cycle
-        self._opencode_iteration_cycle()
-
-    def _opencode_stop_iteration(self):
-        self._opencode_is_running = False
-        self._opencode_start_btn.configure(state="normal")
-        self._opencode_stop_btn.configure(state="disabled")
-        self._opencode_export_btn.configure(
-            state="normal"
-        )  # Enable export after stopping
-        self._opencode_chat_status_label.configure(
-            text="● IDLE", text_color=COLORS["text_dim"]
-        )
-        self._opencode_iteration_status_label.configure(
-            text="Proceso detenido por el usuario", text_color=COLORS["accent_red"]
-        )
-        self._opencode_append_chat("Sistema", "⏹ Proceso iterativo detenido.")
-
-    def _opencode_execute_in_terminal(self):
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            self._opencode_append_chat(
-                "Sistema", "⚠ Editor vacío. Genera un guion primero."
-            )
-            return
-        try:
-            json_data = json.loads(json_str)
-            if not isinstance(json_data, list):
-                self._opencode_append_chat(
-                    "Sistema", "⚠ El JSON debe ser un arreglo de escenas."
-                )
-                return
-        except json.JSONDecodeError as e:
-            self._opencode_append_chat("Sistema", f"⚠ JSON inválido: {e}")
-            return
-
-        self._opencode_append_chat("Sistema", "🚀 Abriendo Terminal para Opencode...")
-        self._opencode_iteration_status_label.configure(
-            text="Abriendo terminal...", text_color=COLORS["accent_yellow"]
-        )
-        self._opencode_start_btn.configure(state="disabled")
-        self._opencode_export_btn.configure(state="disabled")
-        self._opencode_stop_btn.configure(state="normal")
-
-        threading.Thread(
-            target=self._opencode_open_terminal,
-            args=(self._opencode_run_guion,),
-            daemon=True,
-        ).start()
-
-    def _opencode_open_terminal(self, callback=None):
-        """Abre una única terminal Konsole para Opencode, la configura y llama al callback."""
-        import subprocess as sp
-        import time
-
-        try:
-            # Cierra terminales previas para un estado limpio
-            if self.wid_b:
-                try:
-                    sp.run(["xdotool", "windowclose", str(self.wid_b)], timeout=2)
-                    self.wid_b = None
-                except Exception:
-                    pass  # Ignorar si la ventana ya no existe
-            if self.wid_a:
-                try:
-                    sp.run(["xdotool", "windowclose", str(self.wid_a)], timeout=2)
-                    self.wid_a = None
-                except Exception:
-                    pass
-            time.sleep(0.5)
-
-            # Abre una nueva y única terminal
-            sp.Popen(["konsole"], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-            time.sleep(2.0)
-
-            # Busca el WID de la nueva terminal
-            result = sp.run(
-                ["xdotool", "search", "--class", "konsole"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            wids = [w.strip() for w in result.stdout.strip().split("\n") if w.strip()]
-
-            if not wids:
-                self.after(
-                    0,
-                    self._opencode_append_chat,
-                    "Error",
-                    "❌ No se pudo encontrar Konsole.",
-                )
-                return
-
-            self.wid_b = wids[-1]
-            self.wid_a = None
-            self.after(
-                0,
-                self._opencode_append_chat,
-                "Sistema",
-                f"✅ Terminal B (WID: {self.wid_b}) lista.",
-            )
-
-            # Configura geometría y limpia la terminal
-            sp.run(
-                [
-                    "xdotool",
-                    "type",
-                    "--window",
-                    str(self.wid_b),
-                    "--delay",
-                    "15",
-                    "resize -s 30 110",
-                ],
-                capture_output=True,
-                timeout=5,
-            )
-            sp.run(
-                ["xdotool", "key", "--window", str(self.wid_b), "Return"],
-                capture_output=True,
-                timeout=5,
-            )
-            time.sleep(0.5)
-            sp.run(
-                [
-                    "xdotool",
-                    "type",
-                    "--window",
-                    str(self.wid_b),
-                    "--delay",
-                    "15",
-                    "clear",
-                ],
-                capture_output=True,
-                timeout=5,
-            )
-            sp.run(
-                ["xdotool", "key", "--window", str(self.wid_b), "Return"],
-                capture_output=True,
-                timeout=5,
-            )
-
-            if callback:
-                self.after(500, callback)
-        except FileNotFoundError:
-            self.after(
-                0,
-                self._opencode_append_chat,
-                "Error",
-                "❌ 'konsole' o 'xdotool' no encontrado.",
-            )
-        except Exception as e:
-            self.after(
-                0, self._opencode_append_chat, "Error", f"⚠ Error de terminal: {e}"
-            )
-
-    def _opencode_run_guion(self):
-        print("DEBUG: _opencode_run_guion called")
-        self._opencode_append_chat("Sistema", "🎬 Iniciando ejecución del guion...")
-        threading.Thread(target=self._opencode_execute_guion, daemon=True).start()
-
-    def _opencode_execute_guion(self):
-        print(f"DEBUG: _opencode_execute_guion starting, WID_B = {self.wid_b}")
-        from kr_studio.core.master_director import MasterDirector, DirectorMode
-
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        print(f"DEBUG: JSON length = {len(json_str)}")
-        try:
-            guion = json.loads(json_str)
-            print(f"DEBUG: Loaded {len(guion)} scenes")
-        except json.JSONDecodeError as e:
-            print(f"DEBUG: JSON error: {e}")
-            self.after(
-                0,
-                self._opencode_append_chat,
-                "Sistema",
-                f"⚠ Error al leer el JSON: {e}",
-            )
-            return
-
-        director = MasterDirector(
-            guion=guion,
-            mode=DirectorMode.SOLO_TERM,
-            workspace_dir=self.workspace_dir,
-            typing_speed=self.typing_speed_pct,
-            wid_a=None,
-            wid_b=self.wid_b,
-            project_name="opencode_terminal",
-            progress_callback=self._opencode_update_progress,
-        )
-        self._active_director = director
-
-        self.after(
-            0,
-            self._opencode_append_chat,
-            "Sistema",
-            f"🎬 Ejecutando {len(guion)} escenas...",
-        )
-
-        threading.Thread(
-            target=self._opencode_director_thread, args=(director,), daemon=True
-        ).start()
-
-    def _opencode_director_thread(self, director):
-        """Hilo que ejecuta el director y luego limpia la UI."""
-        director.run()  # Esto es bloqueante y se ejecuta en el hilo
-
-        # Una vez terminado, agenda la finalización en el hilo principal de la UI
-        self.after(0, self._opencode_finalize_execution)
-
-    def _opencode_update_progress(self, current: int, total: int):
-        """Actualiza la etiqueta de progreso (llamado desde el hilo del director)."""
-        self.after(
-            0,
-            lambda: self._opencode_iteration_status_label.configure(
-                text=f"🎬 Escena {current}/{total}..."
-            ),
-        )
-
-    def _opencode_finalize_execution(self):
-        """Limpia y resetea la UI después de que el guion termina."""
-        self._opencode_append_chat("Sistema", "✅ Guion completado.")
-        self._opencode_iteration_status_label.configure(
-            text="Listo", text_color=COLORS["accent_green"]
-        )
-        self._opencode_start_btn.configure(state="normal")
-        self._opencode_stop_btn.configure(state="disabled")
-        self._opencode_export_btn.configure(state="normal")
-        self._active_director = None
-
-    def _opencode_iteration_cycle(self):
-        """One cycle of the Opencode iterative process."""
-        if not self._opencode_is_running:
-            return
-
-        # Get current JSON from the editor
-        json_str = self._opencode_editor.get("1.0", "end-1c").strip()
-        if not json_str:
-            self._opencode_append_chat(
-                "Sistema", "⚠ Editor vacío durante la iteración."
-            )
-            self._opencode_stop_iteration()
-            return
-        try:
-            current_json = json.loads(json_str)
-            if not isinstance(current_json, list):
-                self._opencode_append_chat(
-                    "Sistema", "⚠ El JSON no es un arreglo durante la iteración."
-                )
-                self._opencode_stop_iteration()
-                return
-        except json.JSONDecodeError as e:
-            self._opencode_append_chat(
-                "Sistema", f"⚠ JSON inválido durante la iteración: {e}"
-            )
-            self._opencode_stop_iteration()
-            return
-
-        # Simulate execution of the JSON (in a real implementation, we would run the commands and capture output)
-        self._opencode_append_chat("Sistema", "🔧 Ejecutando JSON actual (simulado)...")
-        # For demonstration, we'll pretend the execution was successful and produced some output.
-        execution_result = {
-            "success": True,
-            "output": "Simulated execution: all commands completed successfully.",
-            # In a real implementation, we would have detailed output per command and possibly errors.
-        }
-
-        # Use the AI to analyze the execution result and suggest the next JSON state
-        self._opencode_append_chat("Sistema", "🤖 Analizando resultados con la IA...")
-        # In a real implementation, we would construct a detailed prompt for the AI engine.
-        # For now, we'll simulate a response that adds a concluding scene.
-        # We'll create a new JSON that is the current JSON plus a concluding narration scene.
-        concluding_scene = {
-            "tipo": "narracion",
-            "voz": "Hemos completado los pasos especificados en el JSON inicial. El proceso iterativo ha finalizado.",
-        }
-
-        # We'll also add a small delay to simulate processing time.
-        # In a real implementation, we would call the AI engine and wait for the response.
-        # Here, we'll just update the JSON after a short delay to simulate AI thinking.
-        def update_json():
-            new_json = current_json + [concluding_scene]
-            self._opencode_editor.delete("1.0", "end")
-            self._opencode_editor.insert(
-                "end", json.dumps(new_json, indent=4, ensure_ascii=False)
-            )
-            self._opencode_update_line_numbers()
-            self._opencode_append_chat(
-                "OPENCODE AI",
-                "He añadido una escena de conclusión al JSON. El proceso iterativo ha alcanzado su objetivo.",
-            )
-            self._opencode_iteration_status_label.configure(
-                text="Iteración completada - Resultado listo para exportar",
-                text_color=COLORS["accent_green"],
-            )
-            # Stop the iteration since we've reached a conclusion (for demonstration)
-            self._opencode_stop_iteration()
-            # Enable the export button so the user can export the final project
-            self._opencode_export_btn.configure(state="normal")
-
-        # Simulate AI processing delay
-        self.after(2000, update_json)
-
-        # In a real implementation, we would not stop here but continue the cycle if the project is not complete.
-        # We would check if the project is complete based on the execution result and the AI's analysis.
-        # For this demonstration, we stop after one cycle.
