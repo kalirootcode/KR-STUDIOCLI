@@ -51,8 +51,8 @@ class ConfigurationPanel(ctk.CTkFrame):
         # Formato de video
         self.format_combo_var = ctk.StringVar(value="9:16 (Vertical)")
 
-        # Contenido de tercero
-        self.third_party_content_var = ctk.BooleanVar(value=False)
+        # Contenido de tercero (3 opciones)
+        self.third_party_content_var = ctk.StringVar(value="Desactivado")
 
         # Notas adicionales
         self._extra_notes = ""
@@ -325,22 +325,48 @@ class ConfigurationPanel(ctk.CTkFrame):
         )
         row += 1
 
-        # Contenido de Tercero
-        self.third_party_check = ctk.CTkCheckBox(
+        # Contenido de Tercero (Dropdown)
+        ctk.CTkLabel(
             self.scrollable_frame,
-            text="🎬 Contenido de Tercero",
-            variable=self.third_party_content_var,
-            font=("JetBrains Mono", 10),
+            text="Contenido de Tercero:",
+            font=("JetBrains Mono", 10, "bold"),
             text_color=COLORS["text_dim"],
-            fg_color=COLORS["accent_yellow"],
-            hover_color="#e6b800",
-            checkbox_width=18,
-            checkbox_height=18,
+        ).grid(row=row, column=0, sticky="e", padx=(10, 5), pady=5)
+
+        self.third_party_menu = ctk.CTkOptionMenu(
+            self.scrollable_frame,
+            variable=self.third_party_content_var,
+            values=[
+                "Desactivado",
+                "Contenido Mixto (Videos + Terminal)",
+                "Contenido Puro (Terminal)",
+            ],
+            width=220,
+            font=("JetBrains Mono", 10),
+            fg_color="#1a1b2e",
+            button_color=COLORS["accent_yellow"],
         )
-        self.third_party_check.grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        self.third_party_menu.grid(row=row, column=1, sticky="w", padx=(5, 10), pady=5)
+        row += 1
+
+        # Descripción del modo seleccionado
+        self.third_party_desc_label = ctk.CTkLabel(
+            self.scrollable_frame,
+            text="💡 Selecciona el tipo de contenido de terceros",
+            font=("JetBrains Mono", 9),
+            text_color="#555577",
+            wraplength=280,
         )
-        row += 2  # Espacio extra
+        self.third_party_desc_label.grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=15, pady=(0, 10)
+        )
+        row += 1
+
+        # Vincular actualización de descripción
+        self.third_party_content_var.trace_add(
+            "write", self._update_third_party_description
+        )
+        row += 1  # Espacio extra
 
     def _build_target_section(self):
         """Construye la sección de objetivo y target."""
@@ -524,11 +550,22 @@ class ConfigurationPanel(ctk.CTkFrame):
         )
         apply_btn.grid(row=0, column=1, padx=(5, 0), pady=0, sticky="ew")
 
+    def _update_third_party_description(self, *args):
+        """Actualiza la descripción según el tipo de contenido seleccionado."""
+        content_type = self.third_party_content_var.get()
+        descriptions = {
+            "Desactivado": "💡 Selecciona el tipo de contenido de terceros",
+            "Contenido Mixto (Videos + Terminal)": "🎬 Videos externos + terminal. Usa para repos, páginas web, animaciones de IA",
+            "Contenido Puro (Terminal)": "🖥️ Solo terminal/grabación. Ideal para tools gráficas como Wireshark, Burp, Caido, Kali",
+        }
+        self.third_party_desc_label.configure(text=descriptions.get(content_type, ""))
+        if hasattr(self.app, "_on_configuration_changed"):
+            self.app._on_configuration_changed()
+
     def _on_speed_change(self, value):
         """Maneja cambios en el slider de velocidad."""
         self.typing_speed_pct = int(float(value))
         self.speed_label.configure(text=f"{self.typing_speed_pct}%")
-        # Notificar a la app principal si tiene el método
         if hasattr(self.app, "_on_configuration_changed"):
             self.app._on_configuration_changed()
 
@@ -536,7 +573,6 @@ class ConfigurationPanel(ctk.CTkFrame):
         """Maneja cambios en el slider de duración."""
         self.video_duration_min = int(float(value))
         self.duration_label.configure(text=f"{self.video_duration_min} min")
-        # Notificar a la app principal si tiene el método
         if hasattr(self.app, "_on_configuration_changed"):
             self.app._on_configuration_changed()
 
@@ -576,7 +612,7 @@ class ConfigurationPanel(ctk.CTkFrame):
         self.duration_label.configure(text="5 min")
 
         self.use_wrapper_var.set(False)
-        self.third_party_content_var.set(False)
+        self.third_party_content_var.set("Desactivado")
 
         # Selección de objetivo
         self.target_combo_var.set("scanme.nmap.org")
@@ -657,7 +693,13 @@ class ConfigurationPanel(ctk.CTkFrame):
                 if "use_wrapper" in config_data:
                     self.use_wrapper_var.set(config_data["use_wrapper"])
                 if "third_party_content" in config_data:
-                    self.third_party_content_var.set(config_data["third_party_content"])
+                    value = config_data["third_party_content"]
+                    if value in [
+                        "Desactivado",
+                        "Contenido Mixto (Videos + Terminal)",
+                        "Contenido Puro (Terminal)",
+                    ]:
+                        self.third_party_content_var.set(value)
 
                 if "target" in config_data:
                     self.target_combo_var.set(config_data["target"])
@@ -705,6 +747,7 @@ class ConfigurationPanel(ctk.CTkFrame):
             "video_duration_min": self.video_duration_min,
             "use_wrapper": self.use_wrapper_var.get(),
             "third_party_content": self.third_party_content_var.get(),
+            "third_party_mode": self.third_party_content_var.get(),
             # Selección de objetivo
             "target": self.target_combo_var.get(),
             # Formato de video

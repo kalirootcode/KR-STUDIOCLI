@@ -120,76 +120,20 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
 
         # Botones de acción
         self._build_configuration_action_buttons(panel)
-        """Construye el panel de configuración centralizada en una ventana flotante."""
-        self.config_window = ctk.CTkToplevel(self)
-        self.config_window.title("⚙️ Configuración Global")
-        self.config_window.geometry("500x750")
-        self.config_window.withdraw()  # Ocultar al inicio
-        self.config_window.protocol("WM_DELETE_WINDOW", self.config_window.withdraw)
 
-        self.config_window.grid_rowconfigure(0, weight=1)
-        self.config_window.grid_columnconfigure(0, weight=1)
-
-        panel = ctk.CTkScrollableFrame(
-            self.config_window,
-            fg_color=COLORS["bg_panel"],
-            corner_radius=12,
-            border_width=1,
-            border_color=COLORS["border"],
-        )
-        panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-
-        # ── Header ──
-        header = ctk.CTkFrame(
-            panel, fg_color=COLORS["header_bg"], height=42, corner_radius=0
-        )
-        header.pack(fill="x", pady=(0, 6))
-        header.pack_propagate(False)
-
-        ctk.CTkLabel(header, text="⚙️", font=("Arial", 18)).pack(
-            side="left", padx=(12, 4)
-        )
-        ctk.CTkLabel(
-            header,
-            text="CONFIGURACIÓN CENTRALIZADA",
-            font=("JetBrains Mono", 14, "bold"),
-            text_color=COLORS["accent_cyan"],
-        ).pack(side="left")
-
-        # Botón de restablecer
-        reset_btn = ctk.CTkButton(
-            header,
-            text="🔄 Restablecer",
-            width=100,
-            height=28,
-            font=("JetBrains Mono", 10),
-            fg_color="#1a1b2e",
-            hover_color="#252640",
-            command=self._reset_configuration_to_defaults,
-        )
-        reset_btn.pack(side="right", padx=(12, 4), pady=6)
-
-        # Contenido principal
-        controls = ctk.CTkFrame(panel, fg_color="transparent")
-        controls.pack(fill="both", expand=True, padx=4, pady=4)
-
-        # Configuración de video
-        self._build_video_config_section(controls)
-
-        # Parámetros de ejecución
-        self._build_execution_params_section(controls)
-
-        # Selección de objetivo
-        self._build_target_section(controls)
-
-        # Formato y Opciones
-        self._build_format_options_section(controls)
-
-        # Notas y Contenido
-        self._build_notes_content_section(controls)
-
-        # Botones de acción
-        self._build_configuration_action_buttons(panel)
+    def _reset_configuration_to_defaults(self):
+        """Restablece todos los valores a sus valores predeterminados."""
+        self._video_type_var.set("Tutorial Profundo")
+        self._presenter_style_var.set("Experto Técnico")
+        self._audience_var.set("Intermedio (1-3 años)")
+        self.typing_speed_pct = 80
+        self.video_duration_min = 5
+        self.use_wrapper_var.set(False)
+        self.third_party_content_var.set("Desactivado")
+        self.target_combo_var.set("scanme.nmap.org")
+        self.format_combo_var.set("9:16 (Vertical)")
+        if hasattr(self, "_on_configuration_changed"):
+            self._on_configuration_changed()
 
     def _build_video_config_section(self, parent):
         """Construye la sección de configuración de video."""
@@ -410,19 +354,29 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         )
         self.wrapper_check.pack(anchor="w", padx=10, pady=(10, 5))
 
-        # Contenido de Tercero
-        self.third_party_check = ctk.CTkCheckBox(
+        # Contenido de Tercero (Dropdown)
+        third_party_label = ctk.CTkLabel(
             parent,
-            text="🎬 Contenido de Tercero",
-            variable=self.third_party_content_var,
+            text="🎬 Contenido de Tercero:",
             font=("JetBrains Mono", 10),
             text_color=COLORS["text_dim"],
-            fg_color=COLORS["accent_yellow"],
-            hover_color="#e6b800",
-            checkbox_width=18,
-            checkbox_height=18,
         )
-        self.third_party_check.pack(anchor="w", padx=10, pady=5)
+        third_party_label.pack(anchor="w", padx=10, pady=(5, 2))
+
+        self.third_party_menu = ctk.CTkOptionMenu(
+            parent,
+            variable=self.third_party_content_var,
+            values=[
+                "Desactivado",
+                "Contenido Mixto (Videos + Terminal)",
+                "Contenido Puro (Terminal)",
+            ],
+            width=200,
+            font=("JetBrains Mono", 10),
+            fg_color="#1a1b2e",
+            button_color=COLORS["accent_yellow"],
+        )
+        self.third_party_menu.pack(anchor="w", padx=10, pady=(0, 5))
 
     def _build_target_section(self, parent):
         """Construye la sección de objetivo y target."""
@@ -571,6 +525,13 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         self._extra_notes_text.pack(side="left", fill="x", expand=True, padx=10)
         self._extra_notes_text.bind("<FocusOut>", lambda e: self._save_extra_notes())
 
+    def _save_extra_notes(self):
+        """Guarda las notas adicionales."""
+        if hasattr(self, "_extra_notes_text"):
+            self._extra_notes = self._extra_notes_text.get("1.0", "end-1c")
+        if hasattr(self, "_on_configuration_changed"):
+            self._on_configuration_changed()
+
     def _build_configuration_action_buttons(self, parent):
         """Construye los botones de acción del panel de configuración."""
         button_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -603,101 +564,31 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         )
         apply_btn.pack(side="right", expand=True, fill="x", padx=(5, 0))
 
-    def _on_speed_change(self, value):
-        """Maneja cambios en el slider de velocidad."""
-        self.typing_speed_pct = int(float(value))
-        self.speed_label.configure(text=f"{self.typing_speed_pct}%")
-        if hasattr(self, "_on_configuration_changed"):
-            self._on_configuration_changed()
-
-    def _on_duration_change(self, value):
-        """Maneja cambios en el slider de duración."""
-        self.video_duration_min = int(float(value))
-        self.duration_label.configure(text=f"{self.video_duration_min} min")
-        if hasattr(self, "_on_configuration_changed"):
-            self._on_configuration_changed()
-
-    def _save_extra_notes(self):
-        """Guarda las notas adicionales."""
-        self._extra_notes = self._extra_notes_text.get("1.0", "end-1c")
-        if hasattr(self, "_on_configuration_changed"):
-            self._on_configuration_changed()
-
-    def _reset_configuration_to_defaults(self):
-        """Restablece todos los valores a sus valores predeterminados."""
-        # Configuración de video
-        templates = get_template_list()
-        template_labels = [f"{t['icono']} {t['nombre']}" for t in templates]
-        self._video_type_var.set(
-            template_labels[1] if len(template_labels) > 1 else template_labels[0]
-        )
-
-        presenters = get_presenter_list()
-        presenter_labels = [p["nombre"] for p in presenters]
-        self._presenter_style_var.set(presenter_labels[0] if presenter_labels else "")
-
-        audiences = get_audience_list()
-        audience_labels = [a["nombre"] for a in audiences]
-        self._audience_var.set(
-            audience_labels[1] if len(audience_labels) > 1 else audience_labels[0]
-        )
-
-        # Parámetros de ejecución
-        self.typing_speed_pct = 80
-        self.speed_slider.set(80)
-        self.speed_label.configure(text="80%")
-
-        self.video_duration_min = 5
-        self.duration_slider.set(5)
-        self.duration_label.configure(text="5 min")
-
-        self.use_wrapper_var.set(False)
-        self.third_party_content_var.set(False)
-
-        # Selección de objetivo
-        self.target_combo_var.set("scanme.nmap.org")
-
-        # Formato de video
-        self.format_combo_var.set("9:16 (Vertical)")
-
-        # Tipo de contenido
-        content_types = ["Por defecto"] + [t["key"] for t in get_template_list()]
-        self.content_combo.set("Por defecto")
-
-        # Notas adicionales
-        self._extra_notes_text.delete("1.0", "end")
-        self._extra_notes = ""
-
-        if hasattr(self, "_on_configuration_changed"):
-            self._on_configuration_changed()
-
     def _save_configuration(self):
         """Guarda la configuración actual en un archivo."""
         config_data = {
-            # Configuración de video
-            "video_type": self._video_type_var.get(),
-            "presenter_style": self._presenter_style_var.get(),
-            "audience": self._audience_var.get(),
-            # Parámetros de ejecución
-            "typing_speed_pct": self.typing_speed_pct,
-            "video_duration_min": self.video_duration_min,
-            "use_wrapper": self.use_wrapper_var.get(),
-            "third_party_content": self.third_party_content_var.get(),
-            # Selección de objetivo
-            "target": self.target_combo_var.get(),
-            # Formato de video
-            "format": self.format_combo_var.get(),
-            # Tipo de contenido
-            "content_type": self.content_combo.get(),
-            # Notas adicionales
-            "extra_notes": self._extra_notes,
+            "video_type": getattr(self, "_video_type_var", ctk.StringVar()).get(),
+            "presenter_style": getattr(
+                self, "_presenter_style_var", ctk.StringVar()
+            ).get(),
+            "audience": getattr(self, "_audience_var", ctk.StringVar()).get(),
+            "typing_speed_pct": getattr(self, "typing_speed_pct", 80),
+            "video_duration_min": getattr(self, "video_duration_min", 5),
+            "use_wrapper": getattr(self, "use_wrapper_var", ctk.BooleanVar()).get(),
+            "third_party_content": getattr(
+                self, "third_party_content_var", ctk.StringVar(value="Desactivado")
+            ).get(),
+            "target": getattr(self, "target_combo_var", ctk.StringVar()).get(),
+            "format": getattr(self, "format_combo_var", ctk.StringVar()).get(),
+            "content_type": getattr(self, "content_combo", None).get()
+            if hasattr(self, "content_combo") and self.content_combo
+            else "Por defecto",
+            "extra_notes": getattr(self, "_extra_notes", ""),
         }
-
         try:
             config_path = os.path.join(self.workspace_dir, "configuration.json")
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, indent=2, ensure_ascii=False)
-
             self.append_chat("Sistema", "✅ Configuración guardada")
         except Exception as e:
             self.append_chat("Error", f"❌ Error al guardar configuración: {str(e)}")
@@ -709,50 +600,44 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     config_data = json.load(f)
-
-                # Aplicar valores cargados
-                if "video_type" in config_data:
+                if hasattr(self, "_video_type_var") and "video_type" in config_data:
                     self._video_type_var.set(config_data["video_type"])
-                if "presenter_style" in config_data:
+                if (
+                    hasattr(self, "_presenter_style_var")
+                    and "presenter_style" in config_data
+                ):
                     self._presenter_style_var.set(config_data["presenter_style"])
-                if "audience" in config_data:
+                if hasattr(self, "_audience_var") and "audience" in config_data:
                     self._audience_var.set(config_data["audience"])
-
-                if "typing_speed_pct" in config_data:
+                if "typing_speed_pct" in config_data and hasattr(self, "speed_slider"):
                     self.typing_speed_pct = config_data["typing_speed_pct"]
                     self.speed_slider.set(self.typing_speed_pct)
                     self.speed_label.configure(text=f"{self.typing_speed_pct}%")
-
-                if "video_duration_min" in config_data:
+                if "video_duration_min" in config_data and hasattr(
+                    self, "duration_slider"
+                ):
                     self.video_duration_min = config_data["video_duration_min"]
                     self.duration_slider.set(self.video_duration_min)
                     self.duration_label.configure(text=f"{self.video_duration_min} min")
-
-                if "use_wrapper" in config_data:
+                if hasattr(self, "use_wrapper_var") and "use_wrapper" in config_data:
                     self.use_wrapper_var.set(config_data["use_wrapper"])
-                if "third_party_content" in config_data:
-                    self.third_party_content_var.set(config_data["third_party_content"])
-
-                if "target" in config_data:
-                    self.target_combo_var.set(config_data["target"])
-
-                if "format" in config_data:
-                    self.format_combo_var.set(config_data["format"])
-
-                if "content_type" in config_data:
-                    self.content_combo.set(config_data["content_type"])
-
-                if "extra_notes" in config_data:
-                    self._extra_notes = config_data["extra_notes"]
-                    self._extra_notes_text.delete("1.0", "end")
-                    self._extra_notes_text.insert("1.0", self._extra_notes)
-
+                if (
+                    hasattr(self, "third_party_content_var")
+                    and "third_party_content" in config_data
+                ):
+                    value = config_data["third_party_content"]
+                    if value in [
+                        "Desactivado",
+                        "Contenido Mixto (Videos + Terminal)",
+                        "Contenido Puro (Terminal)",
+                    ]:
+                        self.third_party_content_var.set(value)
         except Exception as e:
             print(f"Advertencia: No se pudo cargar configuración guardada: {e}")
 
     def _apply_configuration(self):
         """Aplica la configuración actual a la instancia principal de la aplicación."""
-        self._load_saved_configuration()  # Aseguramos que tengamos los valores más recientes
+        self._load_saved_configuration()
         if hasattr(self, "_on_configuration_changed"):
             self._on_configuration_changed()
         self.append_chat("Sistema", "✅ Configuración aplicada")
@@ -760,23 +645,23 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
     def get_current_configuration(self):
         """Retorna la configuración actual como diccionario."""
         return {
-            # Configuración de video
-            "video_type": self._video_type_var.get(),
-            "presenter_style": self._presenter_style_var.get(),
-            "audience": self._audience_var.get(),
-            # Parámetros de ejecución
-            "typing_speed_pct": self.typing_speed_pct,
-            "video_duration_min": self.video_duration_min,
-            "use_wrapper": self.use_wrapper_var.get(),
-            "third_party_content": self.third_party_content_var.get(),
-            # Selección de objetivo
-            "target": self.target_combo_var.get(),
-            # Formato de video
-            "format": self.format_combo_var.get(),
-            # Tipo de contenido
-            "content_type": self.content_combo.get(),
-            # Notas adicionales
-            "extra_notes": self._extra_notes,
+            "video_type": getattr(self, "_video_type_var", ctk.StringVar()).get(),
+            "presenter_style": getattr(
+                self, "_presenter_style_var", ctk.StringVar()
+            ).get(),
+            "audience": getattr(self, "_audience_var", ctk.StringVar()).get(),
+            "typing_speed_pct": getattr(self, "typing_speed_pct", 80),
+            "video_duration_min": getattr(self, "video_duration_min", 5),
+            "use_wrapper": getattr(self, "use_wrapper_var", ctk.BooleanVar()).get(),
+            "third_party_content": getattr(
+                self, "third_party_content_var", ctk.StringVar(value="Desactivado")
+            ).get(),
+            "target": getattr(self, "target_combo_var", ctk.StringVar()).get(),
+            "format": getattr(self, "format_combo_var", ctk.StringVar()).get(),
+            "content_type": getattr(self, "content_combo", None).get()
+            if hasattr(self, "content_combo") and self.content_combo
+            else "Por defecto",
+            "extra_notes": getattr(self, "_extra_notes", ""),
         }
 
     def __init__(self, master_app):
@@ -1959,20 +1844,29 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         )
         self.btn_tts.pack(fill="x", pady=(0, 6))
 
-        # Botón de Contenido de Tercero
-        self.third_party_content_var = ctk.BooleanVar(value=False)
-        self.third_party_check = ctk.CTkCheckBox(
+        # Contenido de Tercero (Dropdown)
+        self.third_party_content_var = ctk.StringVar(value="Desactivado")
+        ctk.CTkLabel(
             controls,
-            text="🎬 Contenido de Tercero",
-            variable=self.third_party_content_var,
+            text="🎬 Contenido:",
             font=("JetBrains Mono", 10),
             text_color=COLORS["text_dim"],
-            fg_color=COLORS["accent_yellow"],
-            hover_color="#e6b800",
-            checkbox_width=18,
-            checkbox_height=18,
+        ).pack(anchor="w", padx=8, pady=(0, 2))
+
+        self.third_party_menu = ctk.CTkOptionMenu(
+            controls,
+            variable=self.third_party_content_var,
+            values=[
+                "Desactivado",
+                "Contenido Mixto (Videos + Terminal)",
+                "Contenido Puro (Terminal)",
+            ],
+            width=180,
+            font=("JetBrains Mono", 10),
+            fg_color="#1a1b2e",
+            button_color=COLORS["accent_yellow"],
         )
-        self.third_party_check.pack(anchor="w", padx=8, pady=(0, 6))
+        self.third_party_menu.pack(anchor="w", padx=8, pady=(0, 6))
 
         self.use_wrapper_var = ctk.BooleanVar(value=False)
         self.wrapper_check = ctk.CTkCheckBox(
@@ -2427,10 +2321,11 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
         return engine
 
     def _get_tts_dir(self) -> str:
-        """Obtiene el directorio de TTS. Usa carpeta del curso si existe."""
+        """Obtiene el directorio de TTS. Usa la carpeta del capítulo (donde está el JSON)."""
         if hasattr(self, "course_orchestrator") and self.course_orchestrator:
-            course_dir = self.course_orchestrator.get_course_tts_dir()
+            course_dir = self.course_orchestrator._course_dir
             if course_dir:
+                os.makedirs(course_dir, exist_ok=True)
                 return course_dir
         return os.path.join(self.workspace_dir, "voces_manuales")
 
@@ -2576,8 +2471,21 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             return
 
         # Determinar carpeta destino (junto al JSON del proyecto)
-        series_dir = getattr(self.series_orchestrator, "_series_dir", None)
-        if series_dir:
+        course_dir = None
+        series_dir = None
+
+        # Verificar si estamos en modo curso (módulos y capítulos)
+        if hasattr(self, "course_orchestrator") and self.course_orchestrator:
+            course_dir = getattr(self.course_orchestrator, "_course_dir", None)
+
+        # Si no hay curso, verificar series
+        if not course_dir:
+            series_dir = getattr(self.series_orchestrator, "_series_dir", None)
+
+        if course_dir:
+            # Modo curso: guardar en la carpeta del capítulo (donde está el JSON)
+            audio_dir = course_dir
+        elif series_dir:
             try:
                 tab = self.modules_tabview.get()
                 tab_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", tab.lower())
@@ -6196,20 +6104,30 @@ class MainWindow(ctk.CTkFrame):  # type: ignore
             tab_name = "cap_unknown"
 
         # ── Construir ruta de audio junto al JSON del capítulo ──
-        # Truncar topic a 40 chars para evitar [Errno 36] File name too long
-        topic_raw = self.series_topic_entry.get().strip() or "serie_generica"
-        topic_safe = (
-            re.sub(r"[^a-zA-Z0-9_\-]", "_", topic_raw)[:40].strip("_") or "serie"
-        )  # type: ignore
+        course_dir = None
+        series_dir = None
 
-        # Obtener series_dir real del orquestador si existe, sino construir
-        series_dir = getattr(self.series_orchestrator, "_series_dir", None)
-        if not series_dir:
-            series_dir = os.path.join(self.workspace_dir, "projects", topic_safe)
+        # Verificar si estamos en modo curso (módulos y capítulos)
+        if hasattr(self, "course_orchestrator") and self.course_orchestrator:
+            course_dir = getattr(self.course_orchestrator, "_course_dir", None)
 
-        tab_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", tab_name.lower())
-        # Audios van DENTRO de la carpeta del capítulo: series_dir/cap_1/audio/
-        output_dir = os.path.join(series_dir, tab_safe, "audio")
+        if not course_dir:
+            # Truncar topic a 40 chars para evitar [Errno 36] File name too long
+            topic_raw = self.series_topic_entry.get().strip() or "serie_generica"
+            topic_safe = (
+                re.sub(r"[^a-zA-Z0-9_\-]", "_", topic_raw)[:40].strip("_") or "serie"
+            )  # type: ignore
+            series_dir = getattr(self.series_orchestrator, "_series_dir", None)
+            if not series_dir:
+                series_dir = os.path.join(self.workspace_dir, "projects", topic_safe)
+
+        if course_dir:
+            # Modo curso: guardar en la carpeta del capítulo (donde está el JSON)
+            output_dir = course_dir
+        else:
+            tab_safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", tab_name.lower())
+            output_dir = os.path.join(series_dir, tab_safe, "audio")
+
         os.makedirs(output_dir, exist_ok=True)
 
         self.btn_chap_tts.configure(state="disabled")

@@ -589,3 +589,36 @@ DURACIÓN RECOMENDADA: {template["duracion_recomendada"]}
 LABORATORIOS: {labs_context}
 {memory_context}
 """
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  MODOS DE CONTENIDO DE TERCEROS
+# ═══════════════════════════════════════════════════════════════════
+
+THIRD_PARTY_MODES = {
+    "Desactivado": {
+        "nombre": "Desactivado",
+        "icono": "❌",
+        "descripcion": "Sin contenido de terceros - genera contenido automático",
+    },
+    "Contenido Mixto (Videos + Terminal)": {
+        "nombre": "Contenido Mixto",
+        "icono": "🎬",
+        "descripcion": "Combina videos externos (animaciones IA, páginas web, repos) con terminal. Ideal para tutorials de repositorios.",
+    },
+    "Contenido Puro (Terminal)": {
+        "nombre": "Contenido Puro",
+        "icono": "🖥️",
+        "descripcion": "Solo terminal/grabación. Ideal para herramientas gráficas como Wireshark, Burp Suite, Caido, Kali Linux.",
+    },
+}
+
+
+def get_third_party_modes() -> list:
+    """Retorna lista de modos de contenido de terceros disponibles."""
+    return list(THIRD_PARTY_MODES.keys())
+
+
+def get_third_party_mode_info(mode: str) -> dict:
+    """Retorna información de un modo específico."""
+    return THIRD_PARTY_MODES.get(mode, THIRD_PARTY_MODES["Desactivado"])

@@ -127,8 +127,8 @@ class ActionHandler:
                 if hasattr(self.ui, "typing_speed_pct"):
                     typing_speed = self.ui.typing_speed_pct
 
-            # Obtener estado de contenido de tercero
-            third_party_content = False
+            # Obtener modo de contenido de tercero (ahora es String, no Boolean)
+            third_party_content = "Desactivado"
             if hasattr(self.ui, "configuration_panel") and hasattr(
                 self.ui.configuration_panel, "third_party_content_var"
             ):

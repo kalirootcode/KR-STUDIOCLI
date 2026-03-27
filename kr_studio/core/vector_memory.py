@@ -6,6 +6,8 @@ de gestionar múltiples colecciones (compartimentos) y mantener aislamiento entr
 
 import chromadb
 import logging
+import json
+import os
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Optional
 
@@ -105,35 +107,47 @@ class VectorMemory:
         self,
         db_path: str = "kr_studio_memory",
         compartments: Optional[List[str]] = None,
+        auto_load: bool = True,
     ):
         """Inicializa la memoria vectorial con soporte multi-compartimentos.
 
         Args:
             db_path: Ruta local de Chromadb.
             compartments: Lista de nombres de compartimentos (colecciones).
+            auto_load: Si True, carga automáticamente archivos .md de la carpeta knowledge.
         """
         self.compartment_names = compartments or self.DEFAULT_COMPARTMENTS
         self.collections = {}
         self.current_compartment: str = (
             self.compartment_names[0] if self.compartment_names else ""
         )
-        try:
-            # Cargar modelo de embeddings de forma singleton
-            global embedding_model
-            if embedding_model is None:
-                embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        self._force_reload = False
 
-            # Cliente de Chromadb
+        # Añadir compartimentos adicionales para los documentos
+        additional_compartments = ["conocimiento", "plantillas", "cursos", "series"]
+        for comp in additional_compartments:
+            if comp not in self.compartment_names:
+                self.compartment_names.append(comp)
+
+        try:
+            # Cliente de Chromadb primero (sin modelo aún)
             global client
             if client is None:
                 client = chromadb.PersistentClient(path=db_path)
+
             # Crear o cargar colecciones para cada compartimento
             for name in self.compartment_names:
                 col = client.get_or_create_collection(name=name)
                 self.collections[name] = col
+
             logger.info(
                 f"Memoria Vectorial lista con compartimentos: {self.compartment_names}"
             )
+
+            # Carga automática de documentos .md (solo si hay datos en Chromadb o es primera vez)
+            if auto_load:
+                self.auto_load_knowledge()
+
         except Exception as e:
             # Fall back to in-memory fake Chromadb if real client cannot start
             logger.warning(
@@ -143,6 +157,26 @@ class VectorMemory:
             for name in self.compartment_names:
                 col = client.get_or_create_collection(name=name)
                 self.collections[name] = col
+
+            # Intentar carga automática aunque sea con fallback
+            if auto_load:
+                try:
+                    self.auto_load_knowledge()
+                except Exception as load_err:
+                    logger.warning(
+                        f"No se pudo cargar conocimiento automáticamente: {load_err}"
+                    )
+                col = client.get_or_create_collection(name=name)
+                self.collections[name] = col
+
+            # Intentar carga automática aunque sea con fallback
+            if auto_load:
+                try:
+                    self.auto_load_knowledge()
+                except Exception as load_err:
+                    logger.warning(
+                        f"No se pudo cargar conocimiento automáticamente: {load_err}"
+                    )
 
     # Utilidad: obtener colección para un compartimento
     def _get_collection(self, compartment: Optional[str]):
@@ -163,6 +197,14 @@ class VectorMemory:
             )
         self.current_compartment = compartment
 
+    def _ensure_model(self):
+        """Carga el modelo de embeddings solo cuando se necesita (lazy loading)."""
+        global embedding_model
+        if embedding_model is None:
+            logger.info("Cargando modelo de embeddings...")
+            embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+            logger.info("Modelo de embeddings cargado.")
+
     def add_document(self, text: str, doc_id: str, compartment: Optional[str] = None):
         """Convierte un texto en vector y lo añade a la colección del compartimento actual."""
         if not text or not doc_id:
@@ -175,6 +217,7 @@ class VectorMemory:
             )
             return
         try:
+            self._ensure_model()
             collection = self._get_collection(comp)
             embedding = embedding_model.encode(text, convert_to_tensor=False).tolist()
             collection.upsert(
@@ -229,6 +272,7 @@ class VectorMemory:
             return []
         results_all: List[Dict] = []
         try:
+            self._ensure_model()
             query_embedding = embedding_model.encode(
                 query_text, convert_to_tensor=False
             ).tolist()
@@ -308,6 +352,311 @@ class VectorMemory:
         except Exception as e:
             logger.error(f"Error al obtener documentos del compartimento '{comp}': {e}")
             return []
+
+    # ─────────────────────────────────────────────────────────────
+    # CARGA AUTOMÁTICA INTELIGENTE DE DOCUMENTOS .md
+    # Sistema de metadata para persistencia y carga eficiente
+    # ─────────────────────────────────────────────────────────────
+
+    COMPARTMENT_KEYWORDS = {
+        "marketing": [
+            "marketing",
+            "viral",
+            "promo",
+            "venta",
+            "hotmart",
+            "udemy",
+            "curso",
+            "estrategia",
+            "audiencia",
+            "repurposing",
+            "promocion",
+            "funnel",
+            "leads",
+            "conversion",
+        ],
+        "conocimiento_general": [
+            "shell",
+            "linux",
+            "nmap",
+            "hack",
+            "pentest",
+            "security",
+            "python",
+            "script",
+            "terminal",
+            "comando",
+            "bash",
+            "kernel",
+            "redes",
+            "servidor",
+            "docker",
+            "kubernetes",
+            "git",
+            "code",
+        ],
+        "guion_director": [
+            "guion",
+            "script",
+            "video",
+            "narracion",
+            "voiceover",
+            "guionizacion",
+        ],
+        "plantillas": ["plantilla", "template", "formato", "estructura"],
+        "opencode": ["opencode", "claude", "ai", "prompt", "agent", "llm", "modelo"],
+    }
+
+    _instance_metadata: Dict = {}
+
+    def _get_metadata_path(self, knowledge_path: str) -> str:
+        """Retorna la ruta del archivo de metadata."""
+        return os.path.join(knowledge_path, ".knowledge_metadata.json")
+
+    def _load_metadata(self, knowledge_path: str) -> Dict:
+        """Carga el archivo de metadata (cache de archivos ya cargados)."""
+        metadata_path = self._get_metadata_path(knowledge_path)
+
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Error leyendo metadata: {e}")
+
+        return {}
+
+    def _save_metadata(self, knowledge_path: str, metadata: Dict):
+        """Guarda el archivo de metadata."""
+        metadata_path = self._get_metadata_path(knowledge_path)
+        try:
+            with open(metadata_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Error guardando metadata: {e}")
+
+    def _detectar_compartimento(self, filename: str) -> str:
+        """Detecta el compartimento basado en palabras clave del nombre del archivo."""
+        filename_lower = filename.lower()
+
+        for compartment, keywords in self.COMPARTMENT_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in filename_lower:
+                    return compartment
+
+        return "conocimiento_general"
+
+    def _chunk_text(self, text: str, chunk_size: int = 1500) -> List[str]:
+        """Divide texto grande en chunks más pequeños."""
+        words = text.split()
+        chunks = []
+        current_chunk = []
+        current_size = 0
+
+        for word in words:
+            word_size = len(word) + 1
+            if current_size + word_size > chunk_size:
+                if current_chunk:
+                    chunks.append(" ".join(current_chunk))
+                current_chunk = [word]
+                current_size = word_size
+            else:
+                current_chunk.append(word)
+                current_size += word_size
+
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+
+        return chunks
+
+    def cargar_documentos_desde_carpeta(
+        self, folder_path: str = "knowledge", recargar: bool = False
+    ) -> Dict:
+        """
+        Carga automáticamente todos los archivos .md de una carpeta.
+        Sistema inteligente: solo carga archivos nuevos o modificados.
+
+        Args:
+            folder_path: Ruta de la carpeta con archivos .md
+            recargar: Si True, fuerza recarga completa (borra cache)
+
+        Returns:
+            Dict con estadísticas de carga
+        """
+        import hashlib
+        import time
+
+        stats = {
+            "cargados": 0,
+            "errores": 0,
+            "ya_cargados": 0,
+            "modificados": 0,
+            "compartimentos": {},
+            "tiempo_total": 0,
+        }
+
+        if not os.path.exists(folder_path):
+            logger.warning(f"La carpeta '{folder_path}' no existe.")
+            return stats
+
+        start_time = time.time()
+
+        if recargar:
+            logger.info("🗑 Recarga forzada: limpiando colecciones y cache...")
+            self.clear_all()
+            metadata = {}
+        else:
+            metadata = self._load_metadata(folder_path)
+
+        archivos_en_disco = {}
+
+        for filename in os.listdir(folder_path):
+            if filename.startswith("."):
+                continue
+            if not filename.endswith((".md", ".txt")):
+                continue
+
+            filepath = os.path.join(folder_path, filename)
+
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                if not content.strip():
+                    logger.warning(f"Archivo vacío: {filename}")
+                    continue
+
+                content_hash = hashlib.md5(content.encode()).hexdigest()
+                archivos_en_disco[filename] = {
+                    "hash": content_hash,
+                    "size": len(content),
+                    "path": filepath,
+                }
+
+                compartment = self._detectar_compartimento(filename)
+
+                existing_metadata = metadata.get(filename)
+
+                if existing_metadata and not recargar:
+                    if existing_metadata.get("hash") == content_hash:
+                        stats["ya_cargados"] += 1
+                        logger.debug(f"✅ Ya cargado (sin cambios): {filename}")
+                        continue
+                    else:
+                        logger.info(f"📝 Archivo modificado: {filename}")
+                        stats["modificados"] += 1
+
+                chunks = self._chunk_text(content)
+
+                for i, chunk in enumerate(chunks):
+                    chunk_id = f"{filename}_{content_hash[:8]}_chunk{i}"
+                    self.add_document(chunk, chunk_id, compartment)
+
+                metadata[filename] = {
+                    "hash": content_hash,
+                    "compartment": compartment,
+                    "chunks": len(chunks),
+                    "size": len(content),
+                    "loaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+
+                logger.info(f"📄 {filename} → {compartment} ({len(chunks)} chunks)")
+                stats["cargados"] += 1
+                stats["compartimentos"][compartment] = (
+                    stats["compartimentos"].get(compartment, 0) + 1
+                )
+
+            except Exception as e:
+                logger.error(f"Error cargando {filename}: {e}")
+                stats["errores"] += 1
+
+        self._save_metadata(folder_path, metadata)
+
+        stats["tiempo_total"] = round(time.time() - start_time, 2)
+
+        logger.info(
+            f"✅ Carga completada en {stats['tiempo_total']}s: "
+            f"{stats['cargados']} nuevos, {stats['ya_cargados']} sin cambios, "
+            f"{stats['modificados']} modificados"
+        )
+
+        return stats
+
+    def auto_load_knowledge(
+        self, knowledge_path: str = "knowledge", force_load: bool = False
+    ) -> Dict:
+        """
+        Carga automática de conocimiento al iniciar.
+
+        Args:
+            knowledge_path: Ruta de la carpeta de conocimiento
+            force_load: Si True, fuerza recarga completa
+
+        Returns:
+            Dict con estadísticas de carga
+        """
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        full_path = os.path.join(base_path, knowledge_path)
+
+        if not os.path.exists(full_path):
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            full_path = os.path.join(base_path, knowledge_path)
+
+        if not os.path.exists(full_path):
+            logger.warning(f"Carpeta de conocimiento no encontrada: {full_path}")
+            return {"cargados": 0, "ya_cargados": 0, "error": "Carpeta no encontrada"}
+
+        logger.info(f"🔄 Iniciando carga automática de conocimiento desde: {full_path}")
+
+        recargar = force_load or self._force_reload
+        self._force_reload = False
+
+        return self.cargar_documentos_desde_carpeta(full_path, recargar=recargar)
+
+    def reload_knowledge(self, knowledge_path: str = "knowledge") -> Dict:
+        """
+        Fuerza la recarga completa del conocimiento.
+        Uso: Llamar desde UI cuando usuario quiere reindexar.
+        """
+        logger.info("🔄 Recarga manual de conocimiento iniciada...")
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        full_path = os.path.join(base_path, knowledge_path)
+
+        if not os.path.exists(full_path):
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+            full_path = os.path.join(base_path, knowledge_path)
+
+        return self.cargar_documentos_desde_carpeta(full_path, recargar=True)
+
+    def get_knowledge_status(self, knowledge_path: str = "knowledge") -> Dict:
+        """
+        Retorna el estado actual del conocimiento cargado.
+        """
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        full_path = os.path.join(base_path, knowledge_path)
+
+        if not os.path.exists(full_path):
+            full_path = os.path.join(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                ),
+                knowledge_path,
+            )
+
+        metadata = self._load_metadata(full_path) if os.path.exists(full_path) else {}
+
+        total_docs = sum(col.count() for col in self.collections.values())
+
+        return {
+            "total_documentos": total_docs,
+            "archivos_cache": len(metadata),
+            "metadata": metadata,
+            "compartimentos": {k: v.count() for k, v in self.collections.items()},
+        }
 
 
 if __name__ == "__main__":

@@ -636,22 +636,22 @@ def transform_to_pronounceable(text: str) -> str:
     """
     if not text:
         return text
-    
+
     # Preserve compound commands first
     text = text.replace("apt-get", "APTGET")
     text = text.replace("git-push", "GITPUSH")
     text = text.replace("git-pull", "GITPULL")
-    
+
     result = text
-    
+
     # URLs - just remove them or replace with placeholder
     result = result.replace("https://", " HTTPS ")
     result = result.replace("http://", " HTTP ")
-    
+
     # Paths
     result = result.replace("./", " punto barra ")
     result = result.replace("../", " punto punto barra ")
-    
+
     # Extensions
     replacements = [
         (".sh", "punto shell"),
@@ -667,7 +667,7 @@ def transform_to_pronounceable(text: str) -> str:
     ]
     for old, new in replacements:
         result = result.replace(old, " " + new + " ")
-    
+
     # Common flags - order matters!
     flag_replacements = [
         ("-sV", "menos ese ve"),
@@ -714,45 +714,216 @@ def transform_to_pronounceable(text: str) -> str:
     ]
     for old, new in flag_replacements:
         result = result.replace(old, new)
-    
+
     # Single dash flags
-    result = re.sub(r'-([a-zA-Z0-9])', r' menos ', result)
-    
-    # Commands
+    result = re.sub(r"-([a-zA-Z0-9])", r" menos ", result)
+
+    # Commands - expanded with more Linux/hacking/tools
     cmd_replacements = [
+        # Network tools
         ("nmap", "enemap"),
         ("netstat", "netstat"),
         ("curl", "curl"),
         ("wget", "wguet"),
+        ("ping", "ping"),
+        ("traceroute", "traceroute"),
+        ("mtr", "em tr"),
+        ("nslookup", "enes lookup"),
+        ("dig", "dig"),
+        ("host", "host"),
+        ("whois", "who is"),
+        ("arp", "arp"),
+        ("route", "route"),
+        ("ifconfig", "ifconfig"),
+        ("ip", "ip"),
+        ("ss", "ess ess"),
+        ("tcpdump", "tcp dump"),
+        ("ncat", "en cat"),
+        ("netcat", "netcat"),
+        ("socat", "socat"),
+        # System
         ("sudo", "sudo"),
-        ("docker", "docker"),
-        ("kubectl", "kube ctl"),
-        ("git", "git"),
-        ("python", "python"),
-        ("python3", "python tres"),
-        ("pip", "pip"),
-        ("pip3", "pip tres"),
-        ("apt-get", "aptget"),
-        ("apt", "apt"),
-        ("npm", "en em pe"),
-        ("make", "make"),
-        ("gcc", "gee cee cee"),
-        ("kubectl", "kube ctl"),
-        ("ps", "pe ess"),
+        ("su", "ess u"),
+        ("chmod", "chmod"),
+        ("chown", "chown"),
+        ("chgrp", "chgrp"),
         ("ls", "eles"),
+        ("ll", "eles eles"),
+        ("la", "eles a"),
         ("cd", "ce de"),
         ("pwd", "peuve de"),
         ("cat", "cat"),
         ("grep", "grep"),
-        ("chmod", "chmod"),
-        ("chown", "chown"),
+        ("awk", "awk"),
+        ("sed", "sed"),
+        ("cut", "cut"),
+        ("sort", "sort"),
+        ("uniq", "uniq"),
+        ("wc", "uve ce"),
+        ("head", "head"),
+        ("tail", "tail"),
+        ("less", "less"),
+        ("more", "more"),
+        ("find", "find"),
+        ("locate", "locate"),
+        ("which", "which"),
+        ("whereis", "where is"),
+        ("type", "type"),
+        ("file", "file"),
+        ("stat", "stat"),
+        ("touch", "touch"),
+        ("mkdir", "make dir"),
+        ("rmdir", "remove dir"),
+        ("rm", "remove"),
+        ("cp", "cp"),
+        ("mv", "mv"),
+        ("ln", "ln"),
+        ("readlink", "readlink"),
+        ("realpath", "real path"),
+        ("tar", "tar"),
+        ("gzip", "gzip"),
+        ("gunzip", "ungzip"),
+        ("zip", "zip"),
+        ("unzip", "unzip"),
+        ("7z", "seven zee"),
+        # Process
+        ("ps", "pe ess"),
+        ("top", "top"),
+        ("htop", "aitch top"),
+        ("kill", "kill"),
+        ("killall", "kill all"),
+        ("pkill", "pkill"),
+        ("jobs", "jobs"),
+        ("fg", "ef ge"),
+        ("bg", "bee ge"),
+        ("nice", "nice"),
+        ("renice", "re nice"),
+        # Users
+        ("useradd", "user add"),
+        ("usermod", "user mod"),
+        ("userdel", "user del"),
+        ("groupadd", "group add"),
+        ("groupdel", "group del"),
+        ("passwd", "passwd"),
+        ("id", "id"),
+        ("whoami", "who am i"),
+        ("who", "who"),
+        ("w", "uve"),
+        ("last", "last"),
+        # Packages
+        ("apt", "apt"),
+        ("apt-get", "apt get"),
+        ("apt-cache", "apt cache"),
+        ("dpkg", "dpkg"),
+        ("yum", "yum"),
+        ("dnf", "dnf"),
+        ("rpm", "rpm"),
+        ("pacman", "pacman"),
+        ("pip", "pip"),
+        ("pip3", "pip tres"),
+        ("npm", "en em pe"),
+        ("yarn", "yarn"),
+        ("conda", "conda"),
+        # Containers & Cloud
+        ("docker", "docker"),
+        ("docker-compose", "docker compose"),
+        ("kubectl", "kube ctl"),
+        ("helm", "helm"),
+        ("podman", "podman"),
+        ("kubernetes", "kubernetes"),
+        # Git
+        ("git", "git"),
+        ("git clone", "git clone"),
+        ("git pull", "git pull"),
+        ("git push", "git push"),
+        ("git commit", "git commit"),
+        ("git checkout", "git checkout"),
+        ("git branch", "git branch"),
+        ("git merge", "git merge"),
+        ("git rebase", "git rebase"),
+        ("git status", "git status"),
+        ("git log", "git log"),
+        ("git diff", "git diff"),
+        ("git add", "git add"),
+        ("git stash", "git stash"),
+        # Languages
+        ("python", "python"),
+        ("python3", "python tres"),
+        ("ruby", "ruby"),
+        ("perl", "perl"),
+        ("php", "pe aitch pe"),
+        ("java", "java"),
+        ("javac", "javac"),
+        ("node", "node"),
+        ("gcc", "gee cee cee"),
+        ("g++", "gee plus plus"),
+        ("make", "make"),
+        ("cmake", "cmake"),
+        ("go", "go"),
+        ("rustc", "rustc"),
+        ("cargo", "cargo"),
+        # Security/Hacking
+        ("metasploit", "metasploit"),
+        ("msfconsole", "emesf console"),
+        ("msfvenom", "emesf venóm"),
+        ("nikto", "nikto"),
+        ("dirb", "dirb"),
+        ("gobuster", "go buster"),
+        ("wfuzz", "double ef fuzz"),
+        ("sqlmap", "sql map"),
+        ("hydra", "hydra"),
+        ("john", "john"),
+        ("hashcat", "hashcat"),
+        ("aircrack", "aircrack"),
+        ("reaver", "reaver"),
+        ("wireshark", "wire shark"),
+        ("ettercap", "ettercap"),
+        ("openssl", "open ess ell"),
         ("ssh", "ess ess aitch"),
         ("scp", "ess ce pe"),
+        ("rsync", "ar sync"),
         ("ftp", "efe te pe"),
+        ("sftp", "ess efe te pe"),
+        ("telnet", "telnet"),
+        # Monitoring
+        ("htop", "aitch top"),
+        ("iotop", "io top"),
+        ("atop", "a top"),
+        ("glances", "glances"),
+        ("neofetch", "neo fetch"),
+        ("vmstat", "vee em stat"),
+        ("iostat", "io stat"),
+        ("mpstat", "emp stat"),
+        ("sar", "esar"),
+        ("nmon", "enemon"),
+        ("dstat", "de stat"),
+        # Misc
+        ("man", "man"),
+        ("info", "info"),
+        ("help", "help"),
+        ("echo", "echo"),
+        ("printf", "printf"),
+        ("source", "source"),
+        ("export", "export"),
+        ("alias", "alias"),
+        ("unalias", "unalias"),
+        ("env", "env"),
+        ("set", "set"),
+        ("unset", "unset"),
+        ("test", "test"),
+        ("true", "true"),
+        ("false", "false"),
+        ("exit", "exit"),
+        ("logout", "logout"),
+        ("clear", "clear"),
+        ("reset", "reset"),
+        ("history", "history"),
+        ("xargs", "xargs"),
+        ("tee", "tee"),
     ]
     for old, new in cmd_replacements:
         result = result.replace(old, new)
-    
+
     # Symbols
     sym_replacements = [
         ("|", " pipe "),
@@ -766,16 +937,15 @@ def transform_to_pronounceable(text: str) -> str:
     ]
     for old, new in sym_replacements:
         result = result.replace(old, new)
-    
+
     # Clean up
     # Restore compound commands
     result = result.replace("APTGET", "apt get")
     result = result.replace("GITPUSH", "git push")
     result = result.replace("GITPULL", "git pull")
-    
-    result = re.sub(r'\s+', ' ', result)
-    return result.strip()
 
+    result = re.sub(r"\s+", " ", result)
+    return result.strip()
 
 
 def transform_command_for_tts(comando: str, voz_text: str = None) -> tuple:

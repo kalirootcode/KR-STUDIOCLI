@@ -148,7 +148,7 @@ REGLAS ESTRICTAS:
 class AIEngine:
     def __init__(
         self,
-        api_key: str,
+        api_key: typing.Optional[str] = None,
         workspace_dir: typing.Optional[str] = None,
         memory: typing.Optional[VectorMemory] = None,
         vector_memories: typing.Optional[typing.Dict[str, VectorMemory]] = None,
@@ -259,7 +259,7 @@ class AIEngine:
             prompt_enriquecido = f"{lab_bloque}\n\n{user_prompt}"
 
             response = self.chat_session.send_message(prompt_enriquecido)
-            return response.text
+            return response.text or ""
         except Exception as e:
             logger.error(f"Error en la API de Gemini: {e}")
             raise RuntimeError(f"Error en la API de Gemini: {e}")
@@ -297,7 +297,7 @@ class AIEngine:
                 f"[FIN LAB_ASIGNADO]"
             )
 
-    def extraer_json(self, response_text: str):
+    def extraer_json(self, response_text: str) -> typing.Optional[list]:
         """Intenta extraer un arreglo JSON válido de la respuesta de la IA."""
         text = response_text.strip()
         text = re.sub(r"```json\s*", "", text)
@@ -330,7 +330,7 @@ class AIEngine:
 
     def buscar_tendencias_live(self) -> list:
         """Usa Gemini con Google Search para buscar tendencias de ciberseguridad."""
-        if not self.api_key:
+        if not self.api_key or not self.client:
             raise RuntimeError("API Key no configurada.")
 
         try:
@@ -369,7 +369,7 @@ Solo el JSON, nada más."""
         formato: str | None = None,
         duration_min: int = 5,
         typing_speed: int = 80,
-        third_party_content: bool = False,
+        third_party_content: str = "Desactivado",
         context_inspector_callback: typing.Optional[typing.Callable] = None,
     ) -> tuple[str, str]:
         """
@@ -491,72 +491,146 @@ El formato es horizontal para YouTube. Puedes usar comandos que muestren más in
                 f"{formato_instruction}"
             )
 
-        # Instrucciones específicas para contenido de tercero
+        # Instrucciones específicas para contenido de tercero (3 modos)
         third_party_instruction = ""
-        if third_party_content:
+
+        if third_party_content == "Contenido Mixto (Videos + Terminal)":
             third_party_instruction = """
-[MODO CONTENIDO DE TERCERO ACTIVADO]
-OBLIGATORIO: Estás generando un guion para videos con CONTENIDO EXTERNO (herramientas, repositorios, páginas web, programas).
+════════════════════════════════════════════════════════════════════════
+[MODO CONTENIDO MIXTO — VIDEOS EXTERNOS + TERMINAL]
+════════════════════════════════════════════════════════════════════════
 
-DETECCIÓN AUTOMÁTICA:
-- Detecta cuando el usuario menciona URLs (github.com, gitlab.com, etc.)
-- Detecta nombres de herramientas/programas específicos
-- Detecta referencias a contenido externo ("mostrando X", "usando Y", "el repo de Z")
+Este modo combina videos externos (animaciones IA, páginas web, repos) con terminal.
 
-ESTRUCTURA DE ESCENAS PARA CONTENIDO EXTERNO:
-1. INTRODUCCIÓN: Presenta el tema y menciona el recurso externo
-2. MOSTRAR RECURSO: Usa campo "indicador" para decirle al editor qué abrir
-3. NARRACIÓN: Explica mientras se muestra el contenido
-4. TRANSICIÓN: Indica cambios entre contenido propio y externo
-5. ANÁLISIS: Reflexiona sobre lo mostrado
+REGLAS DE ESTRUCTURA:
+1. Hook visual atractivo al inicio
+2. Mostrar el repositorio/página externa primero
+3. Incluir animaciones de IA explicativas para conceptos
+4. Transiciones claras entre externo y terminal
+5. Terminal para demostración práctica
+6. Cierre con CTA
 
-FORMATO JSON PARA CONTENIDO EXTERNO:
+INDICADORES PARA ESTE MODO:
+- "ABRIR [URL] EN NAVEGADOR" - Mostrar página/repo
+- "MOSTRAR ANIMACIÓN DE IA EXPLICATIVA" - Videos animados
+- "TRANSICIÓN A TERMINAL" - Cambio a terminal
+- "TRANSICIÓN A NAVEGADOR" - Volver a navegador
+- "GRABAR [PROGRAMA] EN ACCIÓN"
+- "PAUSA PARA VER ANIMACIÓN"
+
+EJEMPLO DE FLUJO:
+1. Intro con animación IA
+2. Mostrar repo en navegador
+3. "Esta es la página oficial del repo X, pueden chequear sus funciones..."
+4. Transición a terminal
+5. Clonación y ejecución
+6. Animación IA explicativa de concepto
+7. Más comandos en terminal
+8. Cierre
+
+FORMATOS JSON PARA ESTE MODO:
+- tipo: "narracion" - narración TTS
+- tipo: "ejecucion" - comando en terminal
+- tipo: "pausa" - esperar para ver contenido
+- visual: descripción del contenido visual
+- indicador: acción a realizar en pantalla
+"""
+
+        elif third_party_content == "Contenido Puro (Terminal)":
+            third_party_instruction = """
+════════════════════════════════════════════════════════════════════════
+[MODO CONTENIDO PURO — SOLO TERMINAL/GRABACIÓN]
+════════════════════════════════════════════════════════════════════════
+
+Este modo es IDEAL para herramientas con interfaz gráfica como:
+- Wireshark, Burp Suite, Caido, Hydra
+- Secciones de Kali Linux
+- Páginas web interactivas
+- Demostraciones prácticas
+
+REGLAS DE ESTRUCTURA:
+1. Hook directo mostrando la herramienta
+2. Introducción rápida de la herramienta
+3. Navegación por la UI (para herramientas gráficas)
+4. Demostración práctica en la herramienta
+5. Análisis de resultados
+6. Cierre con CTA
+
+INDICADORES PARA ESTE MODO:
+- "CAMBIAR A [NOMBRE_HERRAMIENTA]" - Cambiar ventana
+- "VOLVER A TERMINAL" - Transición a terminal
+- "MOSTRAR [HERRAMIENTA] EN ACCIÓN" - Grabación
+- "GRABAR [PROGRAMA]" - Captura de pantalla
+
+EJEMPLO DE FLUJO PARA WIRESHARK:
+1. "Voy a mostrarles cómo funciona el análisis de tráfico"
+2. Mostrar Wireshark abierto
+3. Explicar interfaz: menú, lista de paquetes, detalle
+4. Iniciar captura
+5. Generar tráfico (navegar web)
+6. Analizar paquetes capturados
+7. Mostrar HTTP sin cifrar vs HTTPS cifrado
+8. Cierre: "Por eso usan VPN"
+
+EJEMPLO DE FLUJO PARA BURP SUITE:
+1. Hook sobre importancia del pentesting web
+2. Abrir Burp Suite
+3. Configurar proxy en navegador
+4. Interceptar request
+5. Enviar a Intruder
+6. Configurar ataque
+7. Ejecutar y mostrar resultados
+8. Cierre
+
+FORMATOS JSON PARA ESTE MODO:
+- tipo: "narracion" - explicación del presentador
+- tipo: "ejecucion" - comando (para terminal pura)
+- tipo: "pausa" - esperar para ver resultado
+- visual: descripción de la herramienta en pantalla
+- indicador: "CAMBIAR A [VENTANA]" para transiciones
+"""
+        else:
+            # Desactivado - instrucciones básicas
+            third_party_instruction = """
+════════════════════════════════════════════════════════════════════════
+[REGLAS PARA GENERACIÓN DE GUION]
+════════════════════════════════════════════════════════════════════════
+
+1. Genera contenido educativo y profesional
+2. Sigue el flujo del modo seleccionado (SOLO_TERM o DUAL_AI)
+3. Usa comandos reales y relevantes
+4. Incluye narración explicativa entre comandos
+5. Cierra con CTA claro
+
+FORMATO JSON REQUERIDO:
 {
-  "tipo": "narracion",
-  "voz": "Texto de narración para el audio",
+  "tipo": "narracion" o "ejecucion" o "pausa",
+  "voz": "Texto de narración - PRONUNCIACIÓN NATURAL para TTS",
   "visual": "Descripción de lo que se muestra en pantalla",
-  "timestamp": "0:00",
-  "indicador": "ABRIR https://github.com/repo EN NAVEGADOR"
-}
-
-INDICADORES VÁLIDOS PARA EL EDITOR:
-- "ABRIR [URL] EN NAVEGADOR"
-- "MOSTRAR [NOMBRE] EN PANTALLA"
-- "GRABAR [PROGRAMA/HERAMIENTA] EN ACCIÓN"
-- "TRANSICIÓN A TERMINAL"
-- "CAMBIAR A [VENTANA/PROGRAMA]"
-- "PAUSA PARA VER [CONTENIDO]"
-
-REGLAS OBLIGATORIAS:
-1. SIEMPRE incluye campo "indicador" cuando muestres contenido externo
-2. DA tiempo al espectador para observar (usa "pausa" o timestamps generosos)
-3. NARRAR mientras se muestra el contenido, no antes ni después
-4. EXPLICAR qué se ve y por qué es importante
-5. CONECTAR el contenido externo con el tema principal del video
-6. El campo "visual" debe describir claramente qué se espera ver
-7. Usa timestamps para facilitar la edición post-producción
-
-EJEMPLO DE ESCENA CON CONTENIDO EXTERNO:
-{
-  "tipo": "narracion",
-  "voz": "Aquí pueden ver el repositorio oficial de la herramienta. Tómense un momento para explorar.",
-  "visual": "PÁGINA DE GITHUB DEL REPOSITORIO",
-  "timestamp": "0:30",
-  "indicador": "ABRIR https://github.com/usuario/repo EN NAVEGADOR"
+  "comando_visual": "comando exacto a mostrar (solo si tipo es ejecucion)",
+  "timestamp": "0:00"
 }
 """
 
         # Instrucciones de duración y velocidad
         escenas_aprox = duration_min * 6
         dur_speed_instruction = f"""
-[PARAMETROS DE DURACIÓN Y VELOCIDAD]
+[PARÁMETROS DE DURACIÓN Y VELOCIDAD]
 - El usuario ha solicitado que este video dure aproximadamente {duration_min} minuto(s).
 - Genera un JSON profundo y desarrollado que abarque este tiempo (aprox {escenas_aprox} escenas ricas en contenido y narración).
 - Si es 1 minuto, hazlo directo y rápido (tipo TikTok/Reel, 5-8 escenas).
 - Si son 5-10 minutos o más, profundiza con múltiples comandos, análisis exhaustivo, y ejemplos prácticos variados.
 - La velocidad de tipeo actual (Delay) está configurada a {typing_speed}ms por tecla.
+
+REGLAS DE NARRACIÓN (OBLIGATORIO):
+1. El campo "voz" debe ser PRONUNCIABLE por TTS
+2. NO pongas emojis en el campo "voz"
+3. Los comandos se pronuncian: "enemap" (no "nmap letra por letra")
+4. Flags: "menos ese ve" (no "dash S V")
+5. URLs: "github punto com" (no "punto punto slash")
 """
-        prompt_final = f"{long_term_memory_context}\n{prompt}\n{third_party_instruction}\n{dur_speed_instruction}"
+
+        prompt_final = f"{long_term_memory_context}\n{third_party_instruction}\n{prompt}\n{dur_speed_instruction}"
 
         try:
             response = self.chat_session.send_message(prompt_final)

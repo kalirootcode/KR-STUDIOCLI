@@ -1,0 +1,114 @@
+{
+  "shell.md": {
+    "hash": "c4860559285c955562994a8ea9d57c56",
+    "compartment": "conocimiento_general",
+    "chunks": 31,
+    "size": 59485,
+    "loaded_at": "2026-03-27 05:05:27"
+  },
+  "videos_virales.md": {
+    "hash": "ef000e4e5d7de85c0b2bbe16e4cf86f8",
+    "compartment": "marketing",
+    "chunks": 5,
+    "size": 6947,
+    "loaded_at": "2026-03-27 05:05:27"
+  },
+  "storytelling_personal_brand.md": {
+    "hash": "a40f67491f6b1414bc5c71055da156eb",
+    "compartment": "conocimiento_general",
+    "chunks": 6,
+    "size": 8211,
+    "loaded_at": "2026-03-27 05:05:28"
+  },
+  "estrategias_virales.md": {
+    "hash": "958231371ec270499d193b8c75a753d1",
+    "compartment": "marketing",
+    "chunks": 3,
+    "size": 3532,
+    "loaded_at": "2026-03-27 05:05:29"
+  },
+  "psicologia_comprador.md": {
+    "hash": "6d9b2eac2c4e240349aca830d94e7d16",
+    "compartment": "conocimiento_general",
+    "chunks": 4,
+    "size": 5740,
+    "loaded_at": "2026-03-27 05:05:29"
+  },
+  "contenido_tercero.md": {
+    "hash": "18d4d02abc2b38632d786007ddaff40a",
+    "compartment": "conocimiento_general",
+    "chunks": 7,
+    "size": 9354,
+    "loaded_at": "2026-03-27 05:05:30"
+  },
+  "contenido_puro.md": {
+    "hash": "d0718e4a24514255f1b3b8d6cd50c3e8",
+    "compartment": "conocimiento_general",
+    "chunks": 8,
+    "size": 11983,
+    "loaded_at": "2026-03-27 05:05:31"
+  },
+  "marketing_fundamentos.md": {
+    "hash": "9d9c43d3bc3ccfae4fc257880e9a70d5",
+    "compartment": "marketing",
+    "chunks": 3,
+    "size": 3445,
+    "loaded_at": "2026-03-27 05:05:32"
+  },
+  "pronunciacion_comandos.md": {
+    "hash": "4256b3bbde58af7fe6f21c192ec8f764",
+    "compartment": "conocimiento_general",
+    "chunks": 23,
+    "size": 33322,
+    "loaded_at": "2026-03-27 05:05:36"
+  },
+  "contenido_mixto.md": {
+    "hash": "4d5ec9ba76b4df54d030df837bdfe607",
+    "compartment": "conocimiento_general",
+    "chunks": 5,
+    "size": 7532,
+    "loaded_at": "2026-03-27 05:05:37"
+  },
+  "hotmart_mastery.md": {
+    "hash": "f3ba8f98353e97e21d2b8f2175541236",
+    "compartment": "marketing",
+    "chunks": 6,
+    "size": 7859,
+    "loaded_at": "2026-03-27 05:05:38"
+  },
+  "audience_nicho.md": {
+    "hash": "30a12a4b1dbdc09410445afb97b99541",
+    "compartment": "conocimiento_general",
+    "chunks": 5,
+    "size": 7576,
+    "loaded_at": "2026-03-27 05:05:39"
+  },
+  "plantillas_contenido.md": {
+    "hash": "92825d5ef8fdaf05741e357d0adc070e",
+    "compartment": "plantillas",
+    "chunks": 3,
+    "size": 3999,
+    "loaded_at": "2026-03-27 05:05:39"
+  },
+  "todos_los_ctas.md": {
+    "hash": "0721629636b8b506ce732a459e1cfa83",
+    "compartment": "conocimiento_general",
+    "chunks": 7,
+    "size": 9323,
+    "loaded_at": "2026-03-27 05:05:41"
+  },
+  "repurposing_mastery.md": {
+    "hash": "57d2c57943065f7c3541cf78e8d18c86",
+    "compartment": "marketing",
+    "chunks": 6,
+    "size": 8800,
+    "loaded_at": "2026-03-27 05:05:41"
+  },
+  "kalilinuxmemory.md": {
+    "hash": "52532486d4a38c44b368426808c04392",
+    "compartment": "conocimiento_general",
+    "chunks": 30,
+    "size": 51561,
+    "loaded_at": "2026-03-27 05:05:46"
+  }
+}

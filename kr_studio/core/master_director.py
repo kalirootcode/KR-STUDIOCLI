@@ -88,6 +88,13 @@ class MasterDirector:
         """Solicita detener la ejecución del guion."""
         self.stop_requested = True
 
+    def _calculate_audio_duration(self, voz: str) -> float:
+        """Calcula la duración estimada del audio basado en el texto."""
+        if not voz:
+            return 0.0
+        palabras = len(voz.split())
+        return max(2.0, palabras / 2.5)  # 150 ppm = 2.5 palabras por segundo
+
     def _execute_scene(self, escena: dict):
         """
         Ejecuta una escena individual basándose en su tipo y el modo actual.
@@ -97,18 +104,12 @@ class MasterDirector:
             logger.warning(f"Escena sin tipo definido, omitiendo: {escena}")
             return
 
-        # Lógica de audio (común a muchas escenas)
         voz = escena.get("voz")
-        if voz:
-            # En modo manual, no generamos TTS, solo calculamos el tiempo
-            palabras = len(voz.split())
-            duracion_audio = max(2.0, palabras / 2.5)  # 150 ppm = 2.5 pps
+        duracion_audio = self._calculate_audio_duration(voz)
 
-            # Loguear las instrucciones para que el usuario las lea
-            if hasattr(self, "floating_ctrl") and self.floating_ctrl:
-                self.floating_ctrl.add_log(f"🎙 {voz}", tag="info")
-        else:
-            duracion_audio = 0
+        # Loguear las instrucciones para que el usuario las lea
+        if voz and hasattr(self, "floating_ctrl") and self.floating_ctrl:
+            self.floating_ctrl.add_log(f"🎙 {voz}", tag="info")
 
         # Mapeo de tipos de escena a manejadores
         handlers = {

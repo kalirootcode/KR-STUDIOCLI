@@ -34,6 +34,19 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Error guardando memoria: {e}")
 
+    def _save_entry(self, category: str, key: str, value: typing.Any, timestamp: bool = True):
+        """Guarda una entrada genérica en una categoría de memoria."""
+        if category not in self.memory:
+            self.memory[category] = {} if not timestamp else []
+
+        if timestamp:
+            entry = {"timestamp": datetime.now().isoformat(), "content": value}
+            self.memory[category].append(entry)  # type: ignore
+        else:
+            self.memory[category][key] = value  # type: ignore
+
+        self._save_memory()
+
     def save_fact(self, fact: str) -> str:
         """
         Guarda un hecho o preferencia importante sobre el usuario en la memoria persistente a largo plazo.
@@ -71,13 +84,22 @@ class MemoryManager:
         """Guarda la preferencia de tipo de contenido usado por el usuario."""
         if "content_preferences" not in self.memory:
             self.memory["content_preferences"] = {}
-        
+
         if content_type not in self.memory["content_preferences"]:
             self.memory["content_preferences"][content_type] = 0
-        
+
         self.memory["content_preferences"][content_type] += 1
         self._save_memory()
         logger.info(f"🧠 Preferencia de contenido guardada: {content_type}")
+
+    def save_ui_preference(self, key: str, value: typing.Any):
+        """Guarda una preferencia de UI."""
+        self._save_entry("ui_preferences", key, value, timestamp=False)
+        logger.info(f"💾 UI Preference guardada: {key} = {value}")
+
+    def get_ui_preference(self, key: str, default: typing.Any = None) -> typing.Any:
+        """Obtiene una preferencia de UI."""
+        return self.memory.get("ui_preferences", {}).get(key, default)
 
     def get_content_preferences(self) -> dict:
         """Obtiene las preferencias de tipos de contenido."""
@@ -87,16 +109,3 @@ class MemoryManager:
         """Devuelve las funciones que el agente IA (Gemini) puede usar como 'tools'."""
         # Se expone `save_fact` estructurada para genai
         return [self.save_fact]
-
-    # Preferencias de UI
-    def save_ui_preference(self, key: str, value: typing.Any):
-        """Guarda una preferencia de UI."""
-        if "ui_preferences" not in self.memory:
-            self.memory["ui_preferences"] = {}
-        self.memory["ui_preferences"][key] = value
-        self._save_memory()
-        logger.info(f"💾 UI Preference guardada: {key} = {value}")
-
-    def get_ui_preference(self, key: str, default: typing.Any = None) -> typing.Any:
-        """Obtiene una preferencia de UI."""
-        return self.memory.get("ui_preferences", {}).get(key, default)

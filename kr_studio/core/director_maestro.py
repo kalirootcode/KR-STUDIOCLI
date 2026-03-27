@@ -20,8 +20,8 @@ class DirectorMaestro:
         self.vector_memories = vector_memories
         self.personality = get_personality()
 
-    def generar_post_social(self, tema: str, plataforma: str = "twitter") -> str:
-        """Genera un post optimizado para redes sociales."""
+    def build_post_social_prompt(self, tema: str, plataforma: str = "twitter") -> str:
+        """Construye el prompt para generar un post optimizado para redes sociales."""
         contexto = self._obtener_contexto(tema, n_results=3)
 
         estructura = self.personality.config.get("tipos_contenido", {}).get(
@@ -53,8 +53,8 @@ Responde SOLO con el post, sin explicaciones adicionales."""
 
         return prompt
 
-    def generar_articulo(self, tema: str) -> str:
-        """Genera un artículo completo optimizado para blog."""
+    def build_articulo_prompt(self, tema: str) -> str:
+        """Construye el prompt para generar un artículo completo optimizado para blog."""
         contexto = self._obtener_contexto(tema, n_results=5)
 
         estructura = self.personality.config.get("tipos_contenido", {}).get(
@@ -94,8 +94,8 @@ Tema del artículo: {tema}"""
 
         return prompt
 
-    def generar_modulo_curso(self, tema: str, modulo_num: int = 1) -> str:
-        """Genera un módulo completo para curso (Hotmart/Udemy)."""
+    def build_modulo_curso_prompt(self, tema: str, modulo_num: int = 1) -> str:
+        """Construye el prompt para generar un módulo completo para curso (Hotmart/Udemy)."""
         contexto = self._obtener_contexto(tema, n_results=5)
 
         estructura = self.personality.config.get("tipos_contenido", {}).get(
@@ -143,8 +143,8 @@ Genera el MÓDULO {modulo_num} para un curso sobre: {tema}"""
 
         return prompt
 
-    def generar_serie(self, tema: str, num_episodios: int = 5) -> str:
-        """Genera estructura de serie de contenido."""
+    def build_serie_prompt(self, tema: str, num_episodios: int = 5) -> str:
+        """Construye el prompt para generar estructura de serie de contenido."""
         contexto = self._obtener_contexto(tema, n_results=5)
 
         prompt = f"""Eres {self.personality.config.get("nombre_ia")} - Estratega de contenido serial.
@@ -182,8 +182,8 @@ Genera una serie de {num_episodios} episodios sobre: {tema}"""
 
         return prompt
 
-    def generar_guion_video(self, tema: str, duracion_min: int = 10) -> str:
-        """Genera guion completo para video."""
+    def build_guion_video_prompt(self, tema: str, duracion_min: int = 10) -> str:
+        """Construye el prompt para generar guion completo para video."""
         contexto = self._obtener_contexto(tema, n_results=5)
 
         estructura = self.personality.config.get("tipos_contenido", {}).get(
@@ -225,8 +225,8 @@ Guion para video de {duracion_min} minutos sobre: {tema}"""
 
         return prompt
 
-    def generar_estrategia_marketing(self, objetivo: str) -> str:
-        """Genera estrategia de marketing basada en conocimiento guardado."""
+    def build_estrategia_marketing_prompt(self, objetivo: str) -> str:
+        """Construye el prompt para generar estrategia de marketing basada en conocimiento guardado."""
         marketing_knowledge = self._buscar_en_memoria(
             "marketing", objetivo, n_results=5
         )
